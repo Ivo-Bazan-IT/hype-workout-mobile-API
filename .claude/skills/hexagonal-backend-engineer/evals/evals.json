@@ -1,0 +1,73 @@
+{
+  "skill_name": "hexagonal-backend-engineer",
+  "evals": [
+    {
+      "id": 0,
+      "name": "implement-membership-crud",
+      "prompt": "Necesito gestionar las membresías/planes de cada cliente en el gym. Implementa el CRUD completo de 'Membership': una membresía pertenece a un cliente (clientId) y a un gym (gymId), tiene plan (string), precio (number), estado (activa/vencida/cancelada), fechaInicio y fechaFin. Un cliente no puede tener dos membresías activas a la vez. Quiero poder crearla, listarla por cliente, actualizarla y cancelarla. Sigue la arquitectura del proyecto.",
+      "files": [],
+      "assertions": [
+        "Entidad Membership en domain/entities con patron interface + XEntity + XMapper",
+        "Puerto IMembershipRepository en domain/repositories con gymId explicito en metodos",
+        "Caso de uso Create valida 'una membresia activa por cliente' lanzando error del dominio (ConflictError)",
+        "Casos de uso list-by-client, update y cancel/delete con DI de puerto y execute(dto)",
+        "Schema Mongoose con index por gymId, exporta XModel + XDocument",
+        "MongoMembershipRepository implements el puerto y usa el Mapper",
+        "Controller con try/catch->next, respuesta {status,data}, gymId de req.user (no body)",
+        "Validadores Zod create/update",
+        "createMembershipRoutes es composition root y esta registrada en routes/index.ts",
+        "Regla de dependencias: application/ y domain/ no importan infrastructure/ ni mongoose/express",
+        "npx tsc --noEmit exit 0",
+        "ESLint sin errores",
+        "Test unitario del Create bien formado con vi.fn()"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "integrate-external-email-provider",
+      "prompt": "Quiero enviar emails transaccionales (por ahora recordatorios de vencimiento de membresia) usando la API de Resend (https://resend.com). Lo importante: la logica de negocio no puede depender de Resend, tiene que poder cambiarse el proveedor sin tocar los casos de uso. Integralo respetando el aislamiento en la capa de infraestructura.",
+      "files": [],
+      "assertions": [
+        "Puerto de email (IEmailProvider o similar) en domain/services con metodo de negocio",
+        "El puerto no filtra tipos del SDK de Resend",
+        "Adaptador ResendEmailProvider en infrastructure/external que implements el puerto",
+        "Ningun archivo de domain/ ni application/ importa 'resend' ni llama HTTP al vendor",
+        "El adaptador se consume por constructor via el puerto (inversion de dependencias)",
+        "npx tsc --noEmit exit 0",
+        "ESLint sin errores"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "audit-architecture",
+      "prompt": "Audita el estado actual de este proyecto backend y mapea su arquitectura. Quiero saber si respeta bien la arquitectura hexagonal, donde estan los mayores riesgos (sobre todo si hay fugas de datos entre gyms o acoplamientos que compliquen mantenerlo) y que arreglarias primero.",
+      "files": [],
+      "assertions": [
+        "Diagnostico en texto claro (no solo lista de archivos)",
+        "Verifica la regla de dependencias con ejemplos concretos",
+        "Evalua el aislamiento multi-tenant por gymId como riesgo de seguridad",
+        "Hallazgos priorizados por impacto (seguridad antes que estilo)",
+        "Cada hallazgo referencia ubicaciones concretas (archivo o archivo:linea)",
+        "No inventa archivos/clases que no existen",
+        "Resumen accionable de 2-3 prioridades de mayor retorno"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "refactor-coupled-controller",
+      "prompt": "Este endpoint quedo acoplado: el controller habla directo con Mongoose en vez de pasar por un caso de uso y un repositorio. Refactorizalo para que cumpla la arquitectura hexagonal del proyecto (controller -> use case -> puerto -> adaptador), sin romper la ruta HTTP ni la forma de respuesta, y con los tests en verde.",
+      "files": ["src/interfaces/http/controllers/AttendanceController.ts", "src/interfaces/http/routes/attendance.routes.ts"],
+      "assertions": [
+        "Extrae puerto IAttendanceRepository en domain/repositories",
+        "El schema/model Mongoose se mueve fuera del controller a infrastructure (schema + MongoAttendanceRepository)",
+        "La regla de negocio (no doble check-in el mismo dia) vive en un caso de uso que depende del puerto",
+        "AttendanceController ya no importa mongoose; delega en el caso de uso",
+        "Ruta recableada en el composition root instanciando el adaptador",
+        "Se preservan rutas HTTP (POST /check-in, GET /client/:clientId) y forma de respuesta {status,data}",
+        "npx tsc --noEmit exit 0",
+        "ESLint sin errores",
+        "Test unitario del caso de uso de check-in bien formado (caracteriza comportamiento)"
+      ]
+    }
+  ]
+}

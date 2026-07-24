@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import { authRoutes } from './auth.routes';
+import { gymRoutes, adminGymRoutes } from './gym.routes';
+import { onboardingRoutes } from './onboarding.routes';
+import { routineRoutes } from './routine.routes';
+import { createClientRoutes } from './client.routes';
+import { createDashboardRouter } from './dashboard.routes';
+import { authMiddleware } from '../middlewares/authMiddleware';
+import { tenantMiddleware } from '../middlewares/tenantMiddleware';
+import { requireAdmin } from '../middlewares/roleMiddleware';
+
+const router = Router();
+
+// Public routes
+router.use('/auth', authRoutes);
+router.use('/onboarding', onboardingRoutes);
+
+// Protected routes - require authentication
+router.use(authMiddleware);
+
+// Admin routes (for managing gyms) - CRUD completo de gyms
+router.use('/admin/gyms', requireAdmin, adminGymRoutes);
+
+// Routes that need auth + tenant
+router.use('/gyms', tenantMiddleware, gymRoutes);
+router.use('/clients', tenantMiddleware, createClientRoutes());
+router.use('/routines', tenantMiddleware, routineRoutes);
+router.use('/dashboard', tenantMiddleware, createDashboardRouter());
+
+export default router;

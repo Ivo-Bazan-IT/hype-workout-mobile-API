@@ -1,0 +1,55 @@
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.string().transform(Number).default('4000'),
+  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+
+  MONGO_URI: z.string().min(1, 'MONGO_URI is required'),
+
+  // Redis eliminado - operaciones sincrónicas
+
+  JWT_ACCESS_SECRET: z.string().min(1, 'JWT_ACCESS_SECRET is required'),
+  JWT_REFRESH_SECRET: z.string().min(1, 'JWT_REFRESH_SECRET is required'),
+  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+
+  OPENAI_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+
+  WHATSAPP_API_VERSION: z.string().default('v20.0'),
+  WHATSAPP_DEFAULT_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_DEFAULT_ACCESS_TOKEN: z.string().optional(),
+
+  GOOGLE_FORMS_DEFAULT_WEBHOOK_SECRET: z.string().optional(),
+
+  PDF_TEMPLATE_STORAGE_PATH: z.string().default('./storage/templates'),
+  PDF_OUTPUT_STORAGE_PATH: z.string().default('./storage/generated'),
+
+  ARCA_API_BASE_URL: z.string().optional(),
+  ARCA_API_KEY: z.string().optional(),
+
+  // AFIP SDK
+  AFIP_SDK_API_KEY: z.string().optional(),
+
+  // Security - Encryption key (32 bytes in hex = 64 chars)
+  APP_MASTER_KEY: z.string().length(64).optional(),
+
+  // Superadmin seed
+  SUPERADMIN_EMAIL: z.string().email().optional(),
+  SUPERADMIN_PASSWORD: z.string().optional(),
+  SUPERADMIN_NAME: z.string().default('Super Admin'),
+});
+
+export type EnvConfig = z.infer<typeof envSchema>;
+
+export const env = envSchema.parse(process.env);
+
+// Validaciones de configuración
+if (!env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) {
+  console.warn('⚠️  Warning: No AI provider API keys configured. IA features will not work.');
+}
+
+if (!env.APP_MASTER_KEY) {
+  console.warn('⚠️  Warning: APP_MASTER_KEY no está definida. Las credenciales AFIP no podrán ser encriptadas.');
+}

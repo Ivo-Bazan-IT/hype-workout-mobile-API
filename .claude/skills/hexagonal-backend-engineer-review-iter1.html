@@ -1,0 +1,1909 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eval Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script
+      src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"
+      integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT"
+      crossorigin="anonymous"
+    ></script>
+    <style>
+      :root {
+        --bg: #faf9f5;
+        --surface: #ffffff;
+        --border: #e8e6dc;
+        --text: #141413;
+        --text-muted: #b0aea5;
+        --accent: #d97757;
+        --accent-hover: #c4613f;
+        --green: #788c5d;
+        --green-bg: #eef2e8;
+        --red: #c44;
+        --red-bg: #fceaea;
+        --header-bg: #141413;
+        --header-text: #faf9f5;
+        --radius: 6px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Lora", Georgia, serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ---- Header ---- */
+      .header {
+        background: var(--header-bg);
+        color: var(--header-text);
+        padding: 1rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .header h1 {
+        font-family: "Poppins", sans-serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+      .header .instructions {
+        font-size: 0.8rem;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+      }
+      .header .progress {
+        font-size: 0.875rem;
+        opacity: 0.8;
+        text-align: right;
+      }
+
+      /* ---- Main content ---- */
+      .main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+
+      /* ---- Sections ---- */
+      .section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        flex-shrink: 0;
+      }
+      .section-header {
+        font-family: "Poppins", sans-serif;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border);
+        background: var(--bg);
+      }
+      .section-body {
+        padding: 1rem;
+      }
+
+      /* ---- Config badge ---- */
+      .config-badge {
+        display: inline-block;
+        padding: 0.2rem 0.625rem;
+        border-radius: 9999px;
+        font-family: "Poppins", sans-serif;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        margin-left: 0.75rem;
+        vertical-align: middle;
+      }
+      .config-badge.config-primary {
+        background: rgba(33, 150, 243, 0.12);
+        color: #1976d2;
+      }
+      .config-badge.config-baseline {
+        background: rgba(255, 193, 7, 0.15);
+        color: #f57f17;
+      }
+
+      /* ---- Prompt ---- */
+      .prompt-text {
+        white-space: pre-wrap;
+        font-size: 0.9375rem;
+        line-height: 1.6;
+      }
+
+      /* ---- Outputs ---- */
+      .output-file {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .output-file + .output-file {
+        margin-top: 1rem;
+      }
+      .output-file-header {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        font-family:
+          "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", Menlo,
+          monospace;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .output-file-header .dl-btn {
+        font-size: 0.7rem;
+        color: var(--accent);
+        text-decoration: none;
+        cursor: pointer;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-weight: 500;
+        opacity: 0.8;
+      }
+      .output-file-header .dl-btn:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+      .output-file-content {
+        padding: 0.75rem;
+        overflow-x: auto;
+      }
+      .output-file-content pre {
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family:
+          "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", Menlo,
+          monospace;
+      }
+      .output-file-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+      }
+      .output-file-content iframe {
+        width: 100%;
+        height: 600px;
+        border: none;
+      }
+      .output-file-content table {
+        border-collapse: collapse;
+        font-size: 0.8125rem;
+        width: 100%;
+      }
+      .output-file-content table td,
+      .output-file-content table th {
+        border: 1px solid var(--border);
+        padding: 0.375rem 0.5rem;
+        text-align: left;
+      }
+      .output-file-content table th {
+        background: var(--bg);
+        font-weight: 600;
+      }
+      .output-file-content .download-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 0.875rem;
+        cursor: pointer;
+      }
+      .output-file-content .download-link:hover {
+        background: var(--border);
+      }
+      .empty-state {
+        color: var(--text-muted);
+        font-style: italic;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      /* ---- Feedback ---- */
+      .prev-feedback {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.625rem 0.75rem;
+        margin-top: 0.75rem;
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+      .prev-feedback-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.25rem;
+        color: var(--text-muted);
+      }
+      .feedback-textarea {
+        width: 100%;
+        min-height: 100px;
+        padding: 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        resize: vertical;
+        color: var(--text);
+      }
+      .feedback-textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      }
+      .feedback-status {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.5rem;
+        min-height: 1.1em;
+      }
+
+      /* ---- Grades (collapsible) ---- */
+      .grades-toggle {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+      }
+      .grades-toggle:hover {
+        color: var(--accent);
+      }
+      .grades-toggle .arrow {
+        margin-right: 0.5rem;
+        transition: transform 0.15s;
+        font-size: 0.75rem;
+      }
+      .grades-toggle .arrow.open {
+        transform: rotate(90deg);
+      }
+      .grades-content {
+        display: none;
+        margin-top: 0.75rem;
+      }
+      .grades-content.open {
+        display: block;
+      }
+      .grades-summary {
+        font-size: 0.875rem;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .grade-badge {
+        display: inline-block;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .grade-pass {
+        background: var(--green-bg);
+        color: var(--green);
+      }
+      .grade-fail {
+        background: var(--red-bg);
+        color: var(--red);
+      }
+      .assertion-list {
+        list-style: none;
+      }
+      .assertion-item {
+        padding: 0.625rem 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.8125rem;
+      }
+      .assertion-item:last-child {
+        border-bottom: none;
+      }
+      .assertion-status {
+        font-weight: 600;
+        margin-right: 0.5rem;
+      }
+      .assertion-status.pass {
+        color: var(--green);
+      }
+      .assertion-status.fail {
+        color: var(--red);
+      }
+      .assertion-evidence {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
+        padding-left: 1.5rem;
+      }
+
+      /* ---- View tabs ---- */
+      .view-tabs {
+        display: flex;
+        gap: 0;
+        padding: 0 2rem;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .view-tab {
+        font-family: "Poppins", sans-serif;
+        padding: 0.625rem 1.25rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: var(--text-muted);
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+      }
+      .view-tab:hover {
+        color: var(--text);
+      }
+      .view-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .view-panel {
+        display: none;
+      }
+      .view-panel.active {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* ---- Benchmark view ---- */
+      .benchmark-view {
+        padding: 1.5rem 2rem;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .benchmark-table {
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-size: 0.8125rem;
+        width: 100%;
+        margin-bottom: 1.5rem;
+      }
+      .benchmark-table th,
+      .benchmark-table td {
+        padding: 0.625rem 0.75rem;
+        text-align: left;
+        border: 1px solid var(--border);
+      }
+      .benchmark-table th {
+        font-family: "Poppins", sans-serif;
+        background: var(--header-bg);
+        color: var(--header-text);
+        font-weight: 500;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .benchmark-table tr:hover {
+        background: var(--bg);
+      }
+      .benchmark-table tr.benchmark-row-with {
+        background: rgba(33, 150, 243, 0.06);
+      }
+      .benchmark-table tr.benchmark-row-without {
+        background: rgba(255, 193, 7, 0.06);
+      }
+      .benchmark-table tr.benchmark-row-with:hover {
+        background: rgba(33, 150, 243, 0.12);
+      }
+      .benchmark-table tr.benchmark-row-without:hover {
+        background: rgba(255, 193, 7, 0.12);
+      }
+      .benchmark-table tr.benchmark-row-avg {
+        font-weight: 600;
+        border-top: 2px solid var(--border);
+      }
+      .benchmark-table tr.benchmark-row-avg.benchmark-row-with {
+        background: rgba(33, 150, 243, 0.12);
+      }
+      .benchmark-table tr.benchmark-row-avg.benchmark-row-without {
+        background: rgba(255, 193, 7, 0.12);
+      }
+      .benchmark-delta-positive {
+        color: var(--green);
+        font-weight: 600;
+      }
+      .benchmark-delta-negative {
+        color: var(--red);
+        font-weight: 600;
+      }
+      .benchmark-notes {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1rem;
+      }
+      .benchmark-notes h3 {
+        font-family: "Poppins", sans-serif;
+        font-size: 0.875rem;
+        margin-bottom: 0.75rem;
+      }
+      .benchmark-notes ul {
+        list-style: disc;
+        padding-left: 1.25rem;
+      }
+      .benchmark-notes li {
+        font-size: 0.8125rem;
+        line-height: 1.6;
+        margin-bottom: 0.375rem;
+      }
+      .benchmark-empty {
+        color: var(--text-muted);
+        font-style: italic;
+        text-align: center;
+        padding: 3rem;
+      }
+
+      /* ---- Navigation ---- */
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        flex-shrink: 0;
+      }
+      .nav-btn {
+        font-family: "Poppins", sans-serif;
+        padding: 0.5rem 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text);
+        transition: all 0.15s;
+      }
+      .nav-btn:hover:not(:disabled) {
+        background: var(--bg);
+        border-color: var(--text-muted);
+      }
+      .nav-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .done-btn {
+        font-family: "Poppins", sans-serif;
+        padding: 0.5rem 1.5rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.15s;
+      }
+      .done-btn:hover {
+        background: var(--bg);
+        border-color: var(--text-muted);
+      }
+      .done-btn.ready {
+        border: none;
+        background: var(--accent);
+        color: white;
+        font-weight: 600;
+      }
+      .done-btn.ready:hover {
+        background: var(--accent-hover);
+      }
+      /* ---- Done overlay ---- */
+      .done-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 100;
+        justify-content: center;
+        align-items: center;
+      }
+      .done-overlay.visible {
+        display: flex;
+      }
+      .done-card {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 2rem 3rem;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 500px;
+      }
+      .done-card h2 {
+        font-size: 1.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .done-card p {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.5;
+      }
+      .done-card .btn-row {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+      }
+      .done-card button {
+        padding: 0.5rem 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        cursor: pointer;
+        font-size: 0.875rem;
+      }
+      .done-card button:hover {
+        background: var(--bg);
+      }
+      /* ---- Toast ---- */
+      .toast {
+        position: fixed;
+        bottom: 5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--header-bg);
+        color: var(--header-text);
+        padding: 0.625rem 1.25rem;
+        border-radius: var(--radius);
+        font-size: 0.875rem;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        z-index: 200;
+      }
+      .toast.visible {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" style="height: 100vh; display: flex; flex-direction: column">
+      <div class="header">
+        <div>
+          <h1>Eval Review: <span id="skill-name"></span></h1>
+          <div class="instructions">
+            Review each output and leave feedback below. Navigate with arrow
+            keys or buttons. When done, copy feedback and paste into Claude
+            Code.
+          </div>
+        </div>
+        <div class="progress" id="progress"></div>
+      </div>
+
+      <!-- View tabs (only shown when benchmark data exists) -->
+      <div class="view-tabs" id="view-tabs" style="display: none">
+        <button class="view-tab active" onclick="switchView('outputs')">
+          Outputs
+        </button>
+        <button class="view-tab" onclick="switchView('benchmark')">
+          Benchmark
+        </button>
+      </div>
+
+      <!-- Outputs panel (qualitative review) -->
+      <div class="view-panel active" id="panel-outputs">
+        <div class="main">
+          <!-- Prompt -->
+          <div class="section">
+            <div class="section-header">
+              Prompt
+              <span
+                class="config-badge"
+                id="config-badge"
+                style="display: none"
+              ></span>
+            </div>
+            <div class="section-body">
+              <div class="prompt-text" id="prompt-text"></div>
+            </div>
+          </div>
+
+          <!-- Outputs -->
+          <div class="section">
+            <div class="section-header">Output</div>
+            <div class="section-body" id="outputs-body">
+              <div class="empty-state">No output files found</div>
+            </div>
+          </div>
+
+          <!-- Previous Output (collapsible) -->
+          <div class="section" id="prev-outputs-section" style="display: none">
+            <div class="section-header">
+              <div class="grades-toggle" onclick="togglePrevOutputs()">
+                <span class="arrow" id="prev-outputs-arrow">&#9654;</span>
+                Previous Output
+              </div>
+            </div>
+            <div class="grades-content" id="prev-outputs-content"></div>
+          </div>
+
+          <!-- Grades (collapsible) -->
+          <div class="section" id="grades-section" style="display: none">
+            <div class="section-header">
+              <div class="grades-toggle" onclick="toggleGrades()">
+                <span class="arrow" id="grades-arrow">&#9654;</span>
+                Formal Grades
+              </div>
+            </div>
+            <div class="grades-content" id="grades-content"></div>
+          </div>
+
+          <!-- Feedback -->
+          <div class="section">
+            <div class="section-header">Your Feedback</div>
+            <div class="section-body">
+              <textarea
+                class="feedback-textarea"
+                id="feedback"
+                placeholder="What do you think of this output? Any issues, suggestions, or things that look great?"
+              ></textarea>
+              <div class="feedback-status" id="feedback-status"></div>
+              <div
+                class="prev-feedback"
+                id="prev-feedback"
+                style="display: none"
+              >
+                <div class="prev-feedback-label">Previous feedback</div>
+                <div id="prev-feedback-text"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav" id="outputs-nav">
+          <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">
+            &#8592; Previous
+          </button>
+          <button class="done-btn" id="done-btn" onclick="showDoneDialog()">
+            Submit All Reviews
+          </button>
+          <button class="nav-btn" id="next-btn" onclick="navigate(1)">
+            Next &#8594;
+          </button>
+        </div>
+      </div>
+      <!-- end panel-outputs -->
+
+      <!-- Benchmark panel (quantitative stats) -->
+      <div class="view-panel" id="panel-benchmark">
+        <div class="benchmark-view" id="benchmark-content">
+          <div class="benchmark-empty">
+            No benchmark data available. Run a benchmark to see quantitative
+            results here.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Done overlay -->
+    <div class="done-overlay" id="done-overlay">
+      <div class="done-card">
+        <h2>Review Complete</h2>
+        <p>
+          Your feedback has been saved. Go back to your Claude Code session and
+          tell Claude you're done reviewing.
+        </p>
+        <div class="btn-row">
+          <button onclick="closeDoneDialog()">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+      // ---- Embedded data (injected by generate_review.py) ----
+      const EMBEDDED_DATA = {
+        skill_name: "hexagonal-backend-engineer",
+        runs: [
+          {
+            id: "eval-0-with_skill",
+            prompt:
+              "Implementa el CRUD completo de 'Membership' siguiendo la arquitectura del proyecto (cliente+gym, plan, precio, estado activa/vencida/cancelada, fechaInicio/fechaFin; regla: un cliente no puede tener dos membresias activas).",
+            eval_id: 0,
+            outputs: [
+              {
+                name: "REPORT.md",
+                type: "text",
+                content:
+                  "# REPORT \u00e2\u20ac\u201d CRUD de `Membership`\n\nFeature de membres\u00c3\u00adas/planes por cliente, implementado siguiendo la arquitectura hexagonal del\nproyecto (piedra de Rosetta: el feature `client`) y la skill `hexagonal-backend-engineer`.\n\n## Archivos creados\n\n| Capa | Archivo |\n|------|---------|\n| Domain / entidad | `src/domain/entities/Membership.ts` |\n| Domain / puerto | `src/domain/repositories/IMembershipRepository.ts` |\n| Application | `src/application/use-cases/membership/CreateMembershipUseCase.ts` |\n| Application | `src/application/use-cases/membership/ListMembershipsByClientUseCase.ts` |\n| Application | `src/application/use-cases/membership/UpdateMembershipUseCase.ts` |\n| Application | `src/application/use-cases/membership/CancelMembershipUseCase.ts` |\n| Infrastructure | `src/infrastructure/database/mongoose/schemas/MembershipSchema.ts` |\n| Infrastructure | `src/infrastructure/database/mongoose/repositories/MongoMembershipRepository.ts` |\n| Interfaces | `src/interfaces/http/controllers/MembershipController.ts` |\n| Interfaces | `src/interfaces/http/validators/membership.validator.ts` |\n| Interfaces | `src/interfaces/http/routes/membership.routes.ts` |\n| Test | `tests/unit/membership/CreateMembershipUseCase.test.ts` |\n\n## Archivos modificados\n\n| Archivo | Cambio |\n|---------|--------|\n| `src/interfaces/http/routes/index.ts` | Importa `createMembershipRoutes` y registra `router.use('/memberships', tenantMiddleware, createMembershipRoutes())` |\n\n## Endpoints expuestos (bajo `/api/memberships`, con `authMiddleware` + `tenantMiddleware`)\n\n- `POST /` \u00e2\u20ac\u201d crear membres\u00c3\u00ada (valida `createMembershipSchema`).\n- `GET /client/:clientId` \u00e2\u20ac\u201d listar membres\u00c3\u00adas de un cliente.\n- `PUT /:id` \u00e2\u20ac\u201d actualizar membres\u00c3\u00ada (valida `updateMembershipSchema`).\n- `DELETE /:id` \u00e2\u20ac\u201d cancelar membres\u00c3\u00ada (soft: estado -> `cancelada`).\n\n## Decisiones de dise\u00c3\u00b1o\n\n- **Regla \"un cliente no puede tener dos membres\u00c3\u00adas activas\"**: se valida en\n  `CreateMembershipUseCase` (busca las membres\u00c3\u00adas del cliente y lanza `ConflictError` si ya hay una\n  `activa`). Adem\u00c3\u00a1s `UpdateMembershipUseCase` re-verifica la invariante si un `update` intenta\n  reactivar (`estado: 'activa'`) una membres\u00c3\u00ada que no lo estaba.\n- **Existencia del cliente**: `CreateMembershipUseCase` recibe tambi\u00c3\u00a9n `IClientRepository` (inyectado\n  por el composition root) y lanza `NotFoundError('Client')` si el cliente no existe en ese gym.\n- **Multi-tenant**: todos los m\u00c3\u00a9todos del repositorio reciben `gymId` expl\u00c3\u00adcito y filtran por \u00c3\u00a9l; el\n  controller saca el `gymId` del usuario autenticado (`req.user.gymId`), nunca del body.\n- **Cancelar = soft delete**: `delete()` del repositorio cambia `estado` a `cancelada` (mismo patr\u00c3\u00b3n\n  que `MongoClientRepository.delete`). `CancelMembershipUseCase` lanza `NotFoundError('Membership')`\n  si no existe.\n- **Schema Mongoose**: se sigui\u00c3\u00b3 el estilo real de `ClientSchema.ts` (interface con `_id` expl\u00c3\u00adcito\n  sin `extends Document`, e \u00c3\u00adndices con `.index()` aparte), no la variante `extends Document` de la\n  plantilla de la skill, porque la propia skill indica que el c\u00c3\u00b3digo real de `client` es la fuente de\n  verdad cuando difiere.\n- **Errores por el canal central**: clases de `shared/errors/AppError` (`NotFoundError`,\n  `ConflictError`); el controller enruta con `try/catch -> next(error)`.\n\n## Verificaci\u00c3\u00b3n\n\n### `npx tsc --noEmit`\n**Exit code: 0** \u00e2\u20ac\u201d compila en modo strict sin errores.\n\n### `npm run lint`\n**Exit code: 2**, por una incompatibilidad de configuraci\u00c3\u00b3n PREEXISTENTE del repo, no por el c\u00c3\u00b3digo\nnuevo: el proyecto tiene ESLint v9 (que por defecto exige `eslint.config.js` flat) pero solo trae un\n`.eslintrc.json` legacy, as\u00c3\u00ad que ESLint aborta con \"couldn't find an eslint.config file\" antes de\nanalizar nada. No toqu\u00c3\u00a9 la config para no salir del alcance.\n\nVerificaci\u00c3\u00b3n del c\u00c3\u00b3digo nuevo forzando modo legacy\n(`ESLINT_USE_FLAT_CONFIG=false npx eslint src --ext .ts`): **4 errors, 82 warnings**, de los cuales:\n- **0 errores** provienen de archivos de este feature. Los 4 errores son preexistentes en archivos no\n  tocados: `GetGymSettingsUseCase.ts`, `EncryptionService.ts`, `tenantMiddleware.ts`, `gym.routes.ts`.\n- Mis archivos solo producen warnings del mismo tipo que ya emite el feature can\u00c3\u00b3nico `client`\n  (`no-explicit-any` en mapper/entidad y en el helper `validateBody`; `explicit-function-return-type`\n  en las factories de rutas). El c\u00c3\u00b3digo nuevo no introduce ning\u00c3\u00ban error nuevo.\n\n### `npm test`\n**No pudo ejecutarse** (limitaci\u00c3\u00b3n de entorno documentada en la skill). `tests/setup.ts` usa un\n`beforeAll` global de m\u00c3\u00b3dulo para conectar a `mongodb://localhost:27017`; sin Mongo, Vitest falla al\ninicializar la suite (\"failed to find the current suite\" apuntando a `tests/setup.ts:4`). El test\n`CreateMembershipUseCase.test.ts` est\u00c3\u00a1 bien formado (mocks con `vi.fn()` como `any`, patr\u00c3\u00b3n de\n`references/testing.md`), compila con tsc y cubre: (1) camino feliz verificando args incl. `gymId`,\n(2) `NotFoundError` cuando el cliente no existe, (3) `ConflictError` cuando ya hay una activa. Qued\u00c3\u00b3\nbloqueado por la dependencia de Mongo, no por el c\u00c3\u00b3digo.\n\n## Resumen de puertas de calidad\n\n| Gate | Resultado |\n|------|-----------|\n| `npx tsc --noEmit` | exit **0** (verde) |\n| `npm run lint` | exit **2** por config ESLint v9/legacy preexistente; en modo legacy forzado, **0 errores nuevos** de este feature |\n| `npm test` | **no ejecutable** sin MongoDB (setup global acoplado); test unitario escrito y bien formado |\n",
+              },
+            ],
+            grading: {
+              eval_id: 0,
+              eval_name: "implement-membership-crud",
+              configuration: "with_skill",
+              expectations: [
+                {
+                  text: "Entidad Membership con interface + XEntity + XMapper",
+                  passed: true,
+                  evidence:
+                    "src/domain/entities/Membership.ts creado siguiendo el patron triple de Client.ts",
+                },
+                {
+                  text: "Puerto IMembershipRepository con gymId explicito",
+                  passed: true,
+                  evidence:
+                    "src/domain/repositories/IMembershipRepository.ts presente",
+                },
+                {
+                  text: "Create valida 'una membresia activa por cliente' -> ConflictError",
+                  passed: true,
+                  evidence:
+                    "CreateMembershipUseCase lanza ConflictError; verificado por compilacion y reporte",
+                },
+                {
+                  text: "Casos de uso list-by-client, update y cancel/delete",
+                  passed: true,
+                  evidence:
+                    "4 UC presentes: Create, ListMembershipsByClient, Update, Cancel",
+                },
+                {
+                  text: "Schema Mongoose con index por gymId",
+                  passed: true,
+                  evidence:
+                    "MembershipSchema.ts presente con estilo de ClientSchema",
+                },
+                {
+                  text: "MongoMembershipRepository implements el puerto y usa el Mapper",
+                  passed: true,
+                  evidence:
+                    "MongoMembershipRepository.ts presente; tsc verde confirma que implementa el contrato",
+                },
+                {
+                  text: "Controller try/catch->next, {status,data}, gymId de req.user",
+                  passed: true,
+                  evidence:
+                    "grep confirma 'if (!user?.gymId)' en MembershipController.ts",
+                },
+                {
+                  text: "Validadores Zod create/update",
+                  passed: true,
+                  evidence: "membership.validator.ts presente",
+                },
+                {
+                  text: "Composition root y registrada en routes/index.ts",
+                  passed: true,
+                  evidence: "grep 'membership' en routes/index.ts = registrada",
+                },
+                {
+                  text: "Regla de dependencias respetada",
+                  passed: true,
+                  evidence:
+                    "application/domain solo importan 'Types' de mongoose (convencion viva del repo, permitida); ningun import de infrastructure/",
+                },
+                {
+                  text: "npx tsc --noEmit exit 0",
+                  passed: true,
+                  evidence:
+                    "Verificado independientemente: exit 0 en la copia aislada",
+                },
+                {
+                  text: "ESLint sin errores",
+                  passed: true,
+                  evidence:
+                    "CAVEAT: 'npm run lint' esta roto repo-wide (ESLint9 exige flat config; el repo tiene .eslintrc.json legacy). Lintando solo los archivos nuevos: 0 errores, solo warnings identicos a los de ClientMapper/*.routes.ts",
+                },
+                {
+                  text: "Test unitario del Create bien formado con vi.fn()",
+                  passed: true,
+                  evidence:
+                    "tests/unit/membership/CreateMembershipUseCase.test.ts presente y compila; no ejecutable por falta de MongoDB (setup global), no por el codigo",
+                },
+              ],
+            },
+          },
+          {
+            id: "eval-1-with_skill",
+            prompt:
+              "Integra envio de emails transaccionales (recordatorios de vencimiento) con la API de Resend, manteniendo el aislamiento: la logica de negocio no puede depender de Resend.",
+            eval_id: 1,
+            outputs: [
+              {
+                name: "REPORT.md",
+                type: "text",
+                content:
+                  "# REPORT \u00e2\u20ac\u201d Integraci\u00c3\u00b3n de emails transaccionales (Resend)\n\nEnv\u00c3\u00ado de emails transaccionales (recordatorios de vencimiento de membres\u00c3\u00ada) mediante la API de\nResend, integrado respetando la arquitectura hexagonal del proyecto: la l\u00c3\u00b3gica de negocio depende\ns\u00c3\u00b3lo de un puerto del dominio, nunca de Resend.\n\n## Archivos creados\n\n| Capa | Archivo | Rol |\n|------|---------|-----|\n| domain/services | `src/domain/services/IEmailProvider.ts` | **Puerto**. `IEmailProvider.sendTransactionalEmail(EmailMessage)` + tipos `EmailMessage` y `EmailProviderConfig`. Descrito 100% en t\u00c3\u00a9rminos del dominio (`para`, `asunto`, `cuerpoHtml`); ning\u00c3\u00ban tipo de Resend asoma. |\n| infrastructure/external/email | `src/infrastructure/external/email/ResendEmailProvider.ts` | **Adaptador** de Resend. Implementa el puerto v\u00c3\u00ada HTTP con axios (`POST https://api.resend.com/emails`, `Authorization: Bearer`). Traduce dominio\u00e2\u2020\u2019Resend y response\u00e2\u2020\u2019contrato del puerto. |\n| infrastructure/external/email | `src/infrastructure/external/email/EmailProviderFactory.ts` | **Factory** que selecciona el adaptador seg\u00c3\u00ban `EmailProviderConfig.provider` (mismo patr\u00c3\u00b3n que `AIProviderFactory`). |\n| application/use-cases/notification | `src/application/use-cases/notification/SendMembershipExpiryReminderUseCase.ts` | **Caso de uso**. DI por constructor de `IClientRepository` + `IEmailProvider`. Valida cliente (multi-tenant por `gymId`) y email, arma el contenido del recordatorio y delega el env\u00c3\u00ado. No importa nada de `infrastructure/`. |\n| interfaces/http/controllers | `src/interfaces/http/controllers/NotificationController.ts` | **Controller**. Saca `gymId` del usuario autenticado, `try/catch \u00e2\u2020\u2019 next(error)`, respuesta `{ status, data }`. |\n| interfaces/http/routes | `src/interfaces/http/routes/notification.routes.ts` | **Composition root**. \u00c3\u0161nico lugar donde se decide el proveedor: `EmailProviderFactory.create(...)`. Ruta `POST /clients/:clientId/expiry-reminder`. |\n\n## Archivos modificados\n\n| Archivo | Cambio |\n|---------|--------|\n| `src/config/env.ts` | A\u00c3\u00b1adidas vars `EMAIL_PROVIDER` (enum `['resend']`, default `resend`), `RESEND_API_KEY` (opcional), `EMAIL_FROM` (default). |\n| `src/interfaces/http/routes/index.ts` | Registrada la ruta: `router.use('/notifications', tenantMiddleware, createNotificationRoutes())`. |\n\n## Verificaci\u00c3\u00b3n\n\n### `npx tsc --noEmit`\n**Exit code: 0** \u00e2\u20ac\u201d compila en modo strict sin errores.\n\n### `npm run lint`\n- **`npm run lint` tal cual (script del repo): exit 2.** NO por mi c\u00c3\u00b3digo: es un problema preexistente\n  de entorno. El repo trae ESLint 9 pero configura con `.eslintrc.json` (formato legacy). ESLint 9\n  usa flat-config por defecto y aborta con *\"couldn't find an eslint.config.js file\"* antes de lintar\n  una sola l\u00c3\u00adnea. Esto falla igual sin mis cambios.\n- **Ejecutado en el modo legacy que el repo asume** (`ESLINT_USE_FLAT_CONFIG=false npx eslint src --ext .ts`):\n  **exit 1**, con **4 errores y 75 warnings, TODOS en archivos preexistentes que no toqu\u00c3\u00a9**\n  (`GetGymSettingsUseCase.ts`, `EncryptionService.ts`, `tenantMiddleware.ts`, `gym.routes.ts`).\n- **Lint s\u00c3\u00b3lo de los archivos que cre\u00c3\u00a9/modifiqu\u00c3\u00a9:** **exit 0 \u00e2\u20ac\u201d 0 errores.** \u00c3\u0161nica observaci\u00c3\u00b3n: 1\n  *warning* `explicit-function-return-type` en `notification.routes.ts`, id\u00c3\u00a9ntico al que ya emiten\n  todas las factories de rutas existentes (`client.routes.ts`, `dashboard.routes.ts`, etc.); es la\n  convenci\u00c3\u00b3n viva del proyecto, y es warning, no error.\n\n**Conclusi\u00c3\u00b3n honesta:** mi c\u00c3\u00b3digo no introduce ning\u00c3\u00ban error de lint. El `npm run lint` del repo estaba\nroto de antemano por la migraci\u00c3\u00b3n de ESLint 9 y por errores preexistentes ajenos a esta tarea; no los\ncorreg\u00c3\u00ad por estar fuera del alcance (tocar archivos no relacionados).\n\n## C\u00c3\u00b3mo se garantiz\u00c3\u00b3 el aislamiento del vendor\n\n1. **El dominio no conoce Resend.** El puerto `IEmailProvider` vive en `domain/services/` y s\u00c3\u00b3lo habla\n   de `EmailMessage` (`para`, `asunto`, `cuerpoHtml`). No hay imports de axios, del SDK de Resend ni de\n   ning\u00c3\u00ban tipo del proveedor en el dominio.\n2. **El caso de uso depende del puerto, no del adaptador.** `SendMembershipExpiryReminderUseCase`\n   recibe `IEmailProvider` por constructor (inversi\u00c3\u00b3n de dependencias). No importa nada de\n   `infrastructure/`. El contenido del email (regla de negocio) vive en el use case; el adaptador s\u00c3\u00b3lo\n   sabe \"enviar un email\".\n3. **Toda la fuga del vendor est\u00c3\u00a1 encapsulada en el adaptador.** URL de la API, cabeceras de auth,\n   nombres de campos (`from`/`to`/`html`) y la forma del response (`{ id }`) s\u00c3\u00b3lo existen en\n   `ResendEmailProvider`, que traduce en ambos sentidos hacia/desde el contrato del puerto.\n4. **La elecci\u00c3\u00b3n del proveedor est\u00c3\u00a1 aislada en el composition root.** `EmailProviderFactory` +\n   `notification.routes.ts` son los \u00c3\u00banicos puntos que mencionan Resend. Cambiar a SendGrid/SES = crear\n   un nuevo adaptador que implemente `IEmailProvider` y a\u00c3\u00b1adir un `case` a la factory. **Ni el caso de\n   uso ni el controller cambian.**\n\n## Notas\n- Multi-tenant respetado: el `gymId` se obtiene del usuario autenticado (`req.user.gymId`), nunca del\n  body, y se pasa a `clientRepository.findById(clientId, gymId)`.\n- Errores por el canal central: el use case lanza `NotFoundError` / `ValidationError` de\n  `shared/errors/AppError`; el controller hace `next(error)`.\n- No se instal\u00c3\u00b3 el SDK de Resend (seg\u00c3\u00ban indicaci\u00c3\u00b3n). Se usa axios/HTTP, mismo patr\u00c3\u00b3n que\n  `MetaCloudApiProvider`. La llamada podr\u00c3\u00ada sustituirse por el SDK oficial sin cambiar la firma p\u00c3\u00bablica\n  del adaptador.\n",
+              },
+            ],
+            grading: {
+              eval_id: 1,
+              eval_name: "integrate-external-email-provider",
+              configuration: "with_skill",
+              expectations: [
+                {
+                  text: "Puerto de email en domain/services con metodo de negocio",
+                  passed: true,
+                  evidence:
+                    "src/domain/services/IEmailProvider.ts con sendTransactionalEmail y tipos EmailMessage propios",
+                },
+                {
+                  text: "El puerto no filtra tipos del SDK de Resend",
+                  passed: true,
+                  evidence:
+                    "Solo aparece un discriminador string provider:'resend' (mismo patron que IAIProvider provider:'openai'|'anthropic') y un comentario de ejemplo; ningun tipo del SDK",
+                },
+                {
+                  text: "Adaptador ResendEmailProvider en infrastructure/external implements el puerto",
+                  passed: true,
+                  evidence:
+                    "infrastructure/external/email/ResendEmailProvider.ts + EmailProviderFactory.ts presentes",
+                },
+                {
+                  text: "Ningun archivo de domain/ ni application/ importa 'resend' ni HTTP al vendor",
+                  passed: true,
+                  evidence:
+                    "grep de 'resend'/'axios' en domain y application: sin coincidencias de import",
+                },
+                {
+                  text: "El adaptador se consume por constructor via el puerto",
+                  passed: true,
+                  evidence:
+                    "SendMembershipExpiryReminderUseCase recibe IEmailProvider por constructor; el vendor se decide en la ruta (composition root)",
+                },
+                {
+                  text: "npx tsc --noEmit exit 0",
+                  passed: true,
+                  evidence: "Verificado independientemente: exit 0",
+                },
+                {
+                  text: "ESLint sin errores",
+                  passed: true,
+                  evidence:
+                    "CAVEAT: lint roto repo-wide (ESLint9 vs config legacy). Solo archivos nuevos: 0 errores, 1 warning de convention comun a todas las factories",
+                },
+              ],
+            },
+          },
+          {
+            id: "eval-2-with_skill",
+            prompt:
+              "Audita el estado del backend y mapea su arquitectura: respeto de hexagonal, riesgos (fugas entre gyms, acoplamientos), y que arreglar primero.",
+            eval_id: 2,
+            outputs: [
+              {
+                name: "AUDIT.md",
+                type: "text",
+                content:
+                  "# Auditor\u00c3\u00ada de arquitectura \u00e2\u20ac\u201d gym-crm-backend (eval-2)\n\nAuditor\u00c3\u00ada de solo lectura sobre `src/`. Se mape\u00c3\u00b3 el flujo de punta a punta de varios recursos\n(client, routine, onboarding, gym) desde la ruta hasta el adaptador para verificar el wiring real y\nla direcci\u00c3\u00b3n de dependencias, no solo la estructura de carpetas.\n\n## Salud general\n\nEl proyecto **tiene los huesos de una arquitectura hexagonal correcta**: puertos bien definidos en\n`domain/repositories` y `domain/services`, entidades con patr\u00c3\u00b3n `interface + Entity + Mapper`,\nerrores centralizados en `shared/errors/AppError`, y un feature (`client`) que respeta el patr\u00c3\u00b3n casi\nal pie de la letra (ruta \u00e2\u2020\u2019 controller \u00e2\u2020\u2019 use case \u00e2\u2020\u2019 puerto \u00e2\u2020\u2019 `MongoClientRepository`).\n\nEl problema es que **esa disciplina se rompe en cuanto un caso de uso toca una integraci\u00c3\u00b3n externa**\n(IA, WhatsApp, PDF, AFIP): ah\u00c3\u00ad la capa `application` importa `infrastructure` directamente, instancia\nadaptadores concretos y usa `fs`/`process.env`, dejando los puertos `IPdfGenerator`,\n`IWhatsappProvider` e `IInvoiceProvider` definidos pero **sin usar**. Adem\u00c3\u00a1s hay **dos fugas reales de\ndatos entre gyms** y varias rutas/casos de uso desconectados (dead code por wiring incorrecto).\n\nOrdenado por impacto (seguridad/correcci\u00c3\u00b3n primero):\n\n---\n\n### [CR\u00c3\ufffdTICO] Fuga de rutinas entre gyms: `findByClientId` con `gymId` opcional\n\n- **D\u00c3\u00b3nde:** `src/infrastructure/database/mongoose/repositories/MongoRoutineRepository.ts:26-32`\n  (`if (gymId) query.gymId = gymId;`) + `src/interfaces/http/controllers/RoutineController.ts:68-82`\n  (`getByClient` llama `findByClientId(clientId, user?.gymId)`) + `src/interfaces/http/routes/index.ts:27`\n  (`router.use('/routines', routineRoutes)` **sin `tenantMiddleware`**).\n- **Qu\u00c3\u00a9 viola:** aislamiento multi-tenant. La regla del proyecto es \"toda query de repositorio filtra\n  por `gymId` expl\u00c3\u00adcito\". Aqu\u00c3\u00ad `gymId` es `gymId?` y, si llega `undefined`, la query queda `{ clientId }`\n  sin filtro de tenant.\n- **Por qu\u00c3\u00a9 importa:** un usuario cuyo JWT no traiga `gymId` (rol `admin`, o cualquier token sin ese\n  claim) que golpee `GET /api/routines/client/:clientId` recibe **las rutinas de ese cliente en\n  cualquier gym**. Es una fuga directa de datos entre inquilinos, no un detalle de estilo.\n- **C\u00c3\u00b3mo corregir:** hacer `gymId` obligatorio en `IRoutineRepository.findByClientId(clientId, gymId)`\n  y en la query (`{ clientId, gymId }`), montar `/routines` detr\u00c3\u00a1s de `tenantMiddleware` en `index.ts`\n  como el resto, y que `RoutineController` rechace la petici\u00c3\u00b3n (403) si no hay `gymId` en vez de pasar\n  `undefined`/`''` (mismo patr\u00c3\u00b3n que `get`/`resend`, que usan `user?.gymId || ''` \u00e2\u20ac\u201d tambi\u00c3\u00a9n fr\u00c3\u00a1gil,\n  ver m\u00c3\u00a1s abajo).\n\n---\n\n### [CR\u00c3\ufffdTICO] Webhook de onboarding: secret compartido y `gymId` desde el body\n\n- **D\u00c3\u00b3nde:** `src/infrastructure/external/forms/GoogleFormsWebhookHandler.ts:22-24`\n  (`const secretToValidate = expectedSecret || process.env.GOOGLE_FORMS_DEFAULT_WEBHOOK_SECRET;`) +\n  `src/interfaces/http/controllers/OnboardingController.ts:23` (`const { gymId, respuestas } = req.body;`).\n- **Qu\u00c3\u00a9 viola:** aislamiento multi-tenant en el borde p\u00c3\u00bablico. El `gymId` llega en el **body** (nunca del\n  usuario autenticado, porque el webhook es p\u00c3\u00bablico) y la validaci\u00c3\u00b3n de pertenencia se apoya en un secret\n  que, si el gym no tiene el suyo, **cae a un secret global compartido por todos los gyms**.\n- **Por qu\u00c3\u00a9 importa:** cualquiera que conozca (o adivine/filtre) `GOOGLE_FORMS_DEFAULT_WEBHOOK_SECRET`\n  puede hacer `POST /api/onboarding/webhook` con **cualquier `gymId`** y crear o **sobrescribir la\n  `encuestaData` de clientes existentes** (`ProcessFormSubmissionUseCase.ts:41-45`) en gyms ajenos. Es\n  escritura cross-tenant no autenticada.\n- **C\u00c3\u00b3mo corregir:** exigir un `webhookSecret` propio por gym (sin fallback global), o mejor derivar el\n  gym **desde el secret** (buscar el gym cuyo `webhookSecret` coincide) en lugar de confiar en el `gymId`\n  del body. Si se mantiene el default, restringirlo a entornos de desarrollo con un guard expl\u00c3\u00adcito.\n\n---\n\n### [ALTO] La capa `application` importa `infrastructure` (inversi\u00c3\u00b3n de dependencias rota)\n\n- **D\u00c3\u00b3nde:** `src/application/use-cases/routine/GenerateRoutineUseCase.ts:4-8` importa\n  `PuppeteerPdfGenerator`, `MetaCloudApiProvider`, `AIProviderFactory`, `fs` y `path`; los instancia a\n  mano (`new PuppeteerPdfGenerator()` l\u00c3\u00adnea 68, `new MetaCloudApiProvider(...)` l\u00c3\u00adnea 97) y escribe al\n  disco (`fs.mkdirSync`/`fs.writeFileSync` l\u00c3\u00adneas 85-89, `process.env.PDF_OUTPUT_STORAGE_PATH` l\u00c3\u00adnea 82).\n  Mismo patr\u00c3\u00b3n en `src/application/use-cases/client/RenewClientUseCase.ts:6,61`\n  (`import { AfipSdkAdapter }` + `new AfipSdkAdapter(...)`).\n- **Qu\u00c3\u00a9 viola:** la regla nuclear del repo: \"las dependencias apuntan hacia el dominio; `application`\n  depende solo de puertos\". Aqu\u00c3\u00ad un caso de uso conoce Puppeteer, la Cloud API de Meta, el SDK de AFIP y\n  el sistema de archivos.\n- **Por qu\u00c3\u00a9 importa:** los puertos **ya existen** \u00e2\u20ac\u201d `IPdfGenerator`, `IWhatsappProvider`,\n  `IInvoiceProvider` en `domain/services/` \u00e2\u20ac\u201d pero **nadie los inyecta**; est\u00c3\u00a1n definidos y muertos. El\n  caso de uso queda imposible de testear con mocks (el patr\u00c3\u00b3n de `references/testing.md` no aplica), no\n  se puede cambiar de proveedor sin editar l\u00c3\u00b3gica de negocio, y filtra detalles del vendor (formato AFIP,\n  buffers de WhatsApp, rutas de disco) al n\u00c3\u00bacleo.\n- **C\u00c3\u00b3mo corregir:** inyectar `IPdfGenerator`, `IWhatsappProvider` e `IInvoiceProvider` por constructor\n  (como ya se hace con los repos), instanciar los adaptadores concretos **solo** en el composition root\n  (`routine.routes.ts`, `client.routes.ts`). Nota: `AfipSdkAdapter` ni siquiera implementa\n  `IInvoiceProvider` (expone `emitirFactura` en vez de `emitInvoice`); hay que hacer que lo implemente y\n  que el caso de uso dependa del puerto. La escritura de PDF a disco debe moverse tras un puerto de\n  storage, no `fs` directo en `application`.\n\n---\n\n### [ALTO] Errores de dominio evadidos: se lanzan `Error` gen\u00c3\u00a9ricos \u00e2\u2020\u2019 responden 500\n\n- **D\u00c3\u00b3nde:** `src/application/use-cases/routine/GenerateRoutineUseCase.ts:22,27,33`\n  (`throw new Error('Client not found')`, `'Gym not found'`, `'Client has no survey data...'`) y\n  `src/application/use-cases/onboarding/ProcessFormSubmissionUseCase.ts:20,35`\n  (`throw new Error('Invalid or inactive gym')`, `'Missing required fields...'`).\n- **Qu\u00c3\u00a9 viola:** \"errores por el canal central\": lanzar las clases de `shared/errors/AppError` y dejar\n  que el `errorHandler` las traduzca. Un `Error` plano no es `instanceof AppError`.\n- **Por qu\u00c3\u00a9 importa:** `errorHandler.ts:10` (y el handler duplicado en `app.ts:35`) mapea todo lo que no\n  sea `AppError` a **500 Internal Server Error**. As\u00c3\u00ad, \"cliente no encontrado\" o \"faltan campos\" \u00e2\u20ac\u201dque\n  deber\u00c3\u00adan ser 404/400\u00e2\u20ac\u201d llegan al frontend como 500, rompiendo el contrato de la API y el manejo de\n  errores del cliente. `AfipSdkAdapter` tambi\u00c3\u00a9n lanza `Error(...)` gen\u00c3\u00a9ricos (l\u00c3\u00adneas 83-90), que se\n  propagan igual.\n- **C\u00c3\u00b3mo corregir:** sustituir por `NotFoundError('Client')`, `NotFoundError('Gym')`,\n  `ValidationError('...')`, `ForbiddenError(...)` seg\u00c3\u00ban corresponda \u00e2\u20ac\u201d exactamente como ya hace\n  `RenewClientUseCase.ts:28,33` y `UpdateAfipConfigUseCase.ts:21`.\n\n---\n\n### [ALTO] L\u00c3\u00b3gica de negocio en la capa `interfaces` (controllers y rutas)\n\n- **D\u00c3\u00b3nde:**\n  - `src/interfaces/http/controllers/RoutineController.ts:111-161` (`resend`) ejecuta el flujo completo:\n    busca gym y cliente, instancia `MetaCloudApiProvider` (import concreto l\u00c3\u00adnea 7), lee el PDF con `fs`\n    (import l\u00c3\u00adnea 8) y actualiza estado. Es un caso de uso disfrazado de handler.\n  - `src/interfaces/http/controllers/ClientController.ts:143` (`get`) y `:264` (`getExpiring`) llaman\n    `this.clientRepository.findById/getExpiringSoon` **directamente**, salt\u00c3\u00a1ndose la capa de aplicaci\u00c3\u00b3n\n    (el controller recibe `IClientRepository` en el constructor, l\u00c3\u00adnea 17).\n  - `src/interfaces/http/routes/gym.routes.ts:59-98` define handlers inline (`/settings`,\n    `/settings/ai-prompt`) que hablan directo con `MongoGymRepository`, ignorando `GetGymSettingsUseCase`\n    y `UpdateGymUseCase` que existen para eso.\n- **Qu\u00c3\u00a9 viola:** SRP y la separaci\u00c3\u00b3n de capas: el controller/ruta debe orquestar el borde (sacar `gymId`,\n  validar, formar la respuesta) y delegar la l\u00c3\u00b3gica al caso de uso.\n- **Por qu\u00c3\u00a9 importa:** esa l\u00c3\u00b3gica no es testeable con el patr\u00c3\u00b3n de mocks del repo, se duplica el acceso a\n  datos, y `resend` repite la mec\u00c3\u00a1nica de WhatsApp/PDF que ya est\u00c3\u00a1 (mal) en `GenerateRoutineUseCase` \u00e2\u20ac\u201d\n  cualquier cambio hay que hacerlo en dos sitios.\n- **C\u00c3\u00b3mo corregir:** extraer `ResendRoutineUseCase`, `GetClientUseCase`/`GetExpiringClientsUseCase` y usar\n  los `GetGymSettingsUseCase`/`UpdateGymUseCase` existentes; dejar los controllers como orquestadores\n  finos que solo llaman `execute(...)`.\n\n---\n\n### [MEDIO] Router de admin de gyms nunca montado (dead code + endpoints inexistentes)\n\n- **D\u00c3\u00b3nde:** `src/interfaces/http/routes/gym.routes.ts:115` exporta\n  `adminGymRoutes = createAdminGymRouter()` (el CRUD completo con `GymController`), pero\n  `src/interfaces/http/routes/index.ts` **solo importa `gymRoutes`** y lo monta tanto en\n  `/gyms` (l\u00c3\u00adnea 25) como en `/admin/gyms` (l\u00c3\u00adnea 22, con `requireAdmin`). `adminGymRoutes` no se importa\n  en ning\u00c3\u00ban lado.\n- **Qu\u00c3\u00a9 viola:** integridad del composition root / wiring.\n- **Por qu\u00c3\u00a9 importa:** `/api/admin/gyms` sirve en realidad el **router de settings** (solo\n  `/settings` y `/settings/ai-prompt`), as\u00c3\u00ad que crear/listar/editar/borrar gyms (`CreateGymUseCase`,\n  `ListGymsUseCase`, `UpdateGymUseCase`, `DeleteGymUseCase`, `GymController`) es **inaccesible** \u00e2\u20ac\u201d\n  c\u00c3\u00b3digo muerto que aparenta funcionar. En la misma l\u00c3\u00adnea, `UpdateAfipConfigUseCase` no est\u00c3\u00a1 cableado en\n  ninguna ruta, por lo que la API key de AFIP encriptada nunca se puede setear (y `RenewClientUseCase`\n  siempre cae al `AFIP_SDK_API_KEY` de env).\n- **C\u00c3\u00b3mo corregir:** importar y montar `adminGymRoutes` en `/admin/gyms` y `gymRoutes` en `/gyms`;\n  cablear una ruta para `UpdateAfipConfigUseCase`. Unificar adem\u00c3\u00a1s el patr\u00c3\u00b3n de f\u00c3\u00a1brica: unos routers son\n  `createXRoutes()` invocados en el wiring (client, dashboard) y otros son `export const xRoutes =\n  createRouter()` ejecutados al importar (routine, onboarding, gym) \u00e2\u20ac\u201d esta inconsistencia es la que caus\u00c3\u00b3\n  el mismatch.\n\n---\n\n### [MEDIO] `GET /gyms/settings` expone la API key de AFIP encriptada\n\n- **D\u00c3\u00b3nde:** `src/interfaces/http/routes/gym.routes.ts:73-75`\n  (`const { whatsappConfig, ...safeGym } = gym as any; res.json({ ... data: safeGym })`).\n- **Qu\u00c3\u00a9 viola:** minimizaci\u00c3\u00b3n de exposici\u00c3\u00b3n de secretos.\n- **Por qu\u00c3\u00a9 importa:** se elimina `whatsappConfig` pero `afipConfig` (que contiene `encryptedApiKey`,\n  ver `domain/entities/Gym.ts:26`) se devuelve tal cual al usuario del gym. Aunque est\u00c3\u00a9 cifrada, exponer\n  material de secretos por la API es innecesario y riesgoso.\n- **C\u00c3\u00b3mo corregir:** construir un DTO de settings expl\u00c3\u00adcito con solo los campos p\u00c3\u00bablicos (o strippear\n  tambi\u00c3\u00a9n `afipConfig.encryptedApiKey`/`apiKeySecretRef`), idealmente dentro de `GetGymSettingsUseCase`.\n\n---\n\n### [MEDIO] Override de `gymId` por query param para rol `admin`, con l\u00c3\u00b3gica duplicada\n\n- **D\u00c3\u00b3nde:** `src/interfaces/http/controllers/ClientController.ts:50-52, 90-92, 131-133`\n  (`user?.role === 'admin' && req.query.gymId ? req.query.gymId : user?.gymId`) y la misma idea en\n  `src/interfaces/http/middlewares/tenantMiddleware.ts:17-21`.\n- **Qu\u00c3\u00a9 viola:** aislamiento multi-tenant + DRY. La decisi\u00c3\u00b3n de \"qu\u00c3\u00a9 tenant puede ver este request\" est\u00c3\u00a1\n  repetida en cada handler y adem\u00c3\u00a1s en un middleware que **los controllers ignoran** (nadie lee\n  `req.tenantId`).\n- **Por qu\u00c3\u00a9 importa:** el cross-tenant de un `admin` es leg\u00c3\u00adtimo, pero al estar copiado en cada m\u00c3\u00a9todo es\n  f\u00c3\u00a1cil que un handler nuevo lo omita (o lo aplique mal), y tener dos fuentes de verdad (`tenantMiddleware`\n  vs. l\u00c3\u00b3gica inline) es un riesgo de seguridad latente. `tenantMiddleware` hoy es casi c\u00c3\u00b3digo muerto.\n- **C\u00c3\u00b3mo corregir:** centralizar la resoluci\u00c3\u00b3n de tenant en `tenantMiddleware` (que ya calcula\n  `req.tenantId`) y que los controllers lean **solo** `req.tenantId`, eliminando la l\u00c3\u00b3gica inline\n  duplicada.\n\n---\n\n### [BAJO] Duplicaci\u00c3\u00b3n de helpers y del error handler; casts `as any`\n\n- **D\u00c3\u00b3nde:** `validateBody`/`validateQuery` est\u00c3\u00a1n copiados en\n  `src/interfaces/http/routes/client.routes.ts:17-38` y `src/interfaces/http/routes/gym.routes.ts:104-113`\n  (y el template los muestra repetidos por archivo). El error handler est\u00c3\u00a1 **duplicado**: la versi\u00c3\u00b3n de\n  `src/interfaces/http/middlewares/errorHandler.ts` no se importa en ning\u00c3\u00ban lado y `src/app.ts:34-47`\n  reimplementa uno inline. Hay `as any` en `RenewClientUseCase.ts:84,101` (invoice create),\n  `gym.routes.ts:74,92` y `parseInt(gym.cuit)`/`parseInt(existingClient.documento)` sin validar\n  (`RenewClientUseCase.ts:64,71`).\n- **Qu\u00c3\u00a9 viola:** DRY / cohesi\u00c3\u00b3n / tipado estricto.\n- **Por qu\u00c3\u00a9 importa:** el helper duplicado ya divergi\u00c3\u00b3 de su lugar can\u00c3\u00b3nico; el error handler duplicado\n  significa que arreglos en `errorHandler.ts` no tienen efecto. Los `as any` en `invoiceRepository.create`\n  esquivan el contrato del puerto y pueden ocultar errores de forma.\n- **C\u00c3\u00b3mo corregir:** extraer `validateBody`/`validateQuery` a un middleware compartido, borrar el handler\n  inline de `app.ts` y usar el de `errorHandler.ts`, y tipar correctamente los payloads de `create`.\n\n---\n\n## Resumen y prioridades de mayor retorno\n\n**Salud:** arquitectura hexagonal bien concebida en su n\u00c3\u00bacleo y ejemplar en `client`, pero con la\ndisciplina rota justo donde m\u00c3\u00a1s duele (integraciones externas) y con dos fugas reales de datos entre\ngyms. Los puertos correctos ya existen; el trabajo es *conectarlos*, no dise\u00c3\u00b1arlos de cero.\n\n1. **Cerrar las dos fugas multi-tenant primero** (seguridad, esfuerzo bajo): `gymId` obligatorio en\n   `findByClientId` + `tenantMiddleware` en `/routines`; y eliminar el secret global del webhook de\n   onboarding derivando el gym desde el secret. Son bugs de fuga de datos entre inquilinos.\n2. **Reconectar `GenerateRoutineUseCase` y `RenewClientUseCase` a sus puertos**\n   (`IPdfGenerator`/`IWhatsappProvider`/`IInvoiceProvider`), moviendo el `new Adapter(...)` al\n   composition root. Restaura la inversi\u00c3\u00b3n de dependencias, hace testeables los dos casos de uso m\u00c3\u00a1s\n   valiosos y contiene la fuga de tipos del vendor. De paso, cambiar los `throw new Error` por clases de\n   `AppError` para dejar de responder 500 en errores de negocio.\n3. **Arreglar el wiring de rutas de gym** (montar `adminGymRoutes`, cablear `UpdateAfipConfigUseCase`,\n   unificar el patr\u00c3\u00b3n de f\u00c3\u00a1brica de routers) para recuperar funcionalidad de admin hoy inaccesible y\n   eliminar el c\u00c3\u00b3digo muerto que enmascara el problema.\n</content>\n</invoke>\n",
+              },
+            ],
+            grading: {
+              eval_id: 2,
+              eval_name: "audit-architecture",
+              configuration: "with_skill",
+              expectations: [
+                {
+                  text: "Diagnostico en texto claro (no solo lista de archivos)",
+                  passed: true,
+                  evidence: "AUDIT.md con hallazgos narrados y priorizados",
+                },
+                {
+                  text: "Verifica la regla de dependencias con ejemplos concretos",
+                  passed: true,
+                  evidence:
+                    "Hallazgo #2: GenerateRoutineUseCase/RenewClientUseCase instancian adaptadores de infrastructure e ignoran los puertos IPdfGenerator/IWhatsappProvider/IInvoiceProvider",
+                },
+                {
+                  text: "Evalua el aislamiento multi-tenant por gymId como riesgo de seguridad",
+                  passed: true,
+                  evidence:
+                    "Hallazgo #1 CRITICO: fuga de rutinas entre gyms via findByClientId(clientId, gymId?) con gymId opcional",
+                },
+                {
+                  text: "Hallazgos priorizados por impacto (seguridad antes que estilo)",
+                  passed: true,
+                  evidence:
+                    "Orden CRITICO -> ALTO -> MEDIO; cierre con prioridades de mayor retorno",
+                },
+                {
+                  text: "Cada hallazgo referencia ubicaciones concretas",
+                  passed: true,
+                  evidence:
+                    "Cita index.ts:27, MongoRoutineRepository.findByClientId, adminGymRoutes, etc.",
+                },
+                {
+                  text: "No inventa archivos/clases que no existen",
+                  passed: true,
+                  evidence:
+                    "VERIFICADO independientemente: findByClientId gymId? es real, /routines sin tenantMiddleware es real (index.ts:27), adminGymRoutes exportado y nunca importado es real",
+                },
+                {
+                  text: "Resumen accionable de 2-3 prioridades de mayor retorno",
+                  passed: true,
+                  evidence:
+                    "Cierra con: cerrar fugas multi-tenant, reconectar use cases a puertos, arreglar wiring de gym",
+                },
+              ],
+            },
+          },
+          {
+            id: "eval-3-with_skill",
+            prompt:
+              "Refactoriza AttendanceController (acoplado a Mongoose) hacia arquitectura hexagonal (controller -> use case -> puerto -> adaptador) sin romper la ruta HTTP ni la forma de respuesta, tests en verde.",
+            eval_id: 3,
+            outputs: [
+              {
+                name: "REPORT.md",
+                type: "text",
+                content:
+                  "# Refactor de Attendance hacia Arquitectura Hexagonal\n\n## Problema\n\n`src/interfaces/http/controllers/AttendanceController.ts` estaba acoplado: el controller\n**definia el modelo de Mongoose** (`AttendanceSchema` / `AttendanceModel`), **hablaba directo\ncon la base de datos** (`AttendanceModel.findOne/create/find`) y **mezclaba logica de negocio**\n(la regla \"no permitir doble check-in el mismo dia\"). No pasaba por caso de uso ni repositorio,\ny ademas leia `gymId` del `body`/`query` (fuga de aislamiento multi-tenant).\n\n## Solucion\n\nSe replico el patron canonico del feature `client` (entidad + puerto + caso de uso + schema +\nrepo Mongo + controller + ruta), siguiendo la secuencia de `references/audit-refactor.md`\n(caracterizar -> extraer puerto -> mover implementacion al adaptador -> reescribir logica contra\nel puerto -> recablear en el composition root -> verificar).\n\nDireccion de dependencias resultante: **ruta -> controller -> caso de uso -> puerto -> adaptador**.\nLas capas `application/` y `domain/` no importan nada de `infrastructure/` ni de `mongoose` (salvo\nel tipo `Types` en la entidad/mapper, como en `Client`).\n\n## Archivos creados\n\n- `src/domain/entities/Attendance.ts` (domain): `interface Attendance` + `AttendanceEntity` + `AttendanceMapper`.\n- `src/domain/repositories/IAttendanceRepository.ts` (domain): puerto `IAttendanceRepository` (`create`, `findByClientOnDate`, `findByClient`), con `gymId` explicito.\n- `src/application/use-cases/attendance/CheckInUseCase.ts` (application): logica de check-in; invariante \"no doble check-in diario\" -> `ConflictError`.\n- `src/application/use-cases/attendance/ListClientAttendanceUseCase.ts` (application): listar asistencias de un cliente.\n- `src/infrastructure/database/mongoose/schemas/AttendanceSchema.ts` (infrastructure): `AttendanceModel` + `AttendanceDocument` (aqui vive ahora el schema, con indices multi-tenant).\n- `src/infrastructure/database/mongoose/repositories/MongoAttendanceRepository.ts` (infrastructure): adaptador que implementa el puerto usando `AttendanceMapper`; el calculo del rango del dia vive aqui.\n- `tests/unit/attendance/CheckInUseCase.test.ts` (tests): test unitario del caso de uso con mocks `vi.fn()`.\n\n## Archivos modificados\n\n- `src/interfaces/http/controllers/AttendanceController.ts`: deja de definir el modelo y de tocar\n  Mongoose. Recibe los casos de uso por constructor (DI), obtiene `gymId` del usuario autenticado,\n  delega la logica y responde con la forma fija. `try/catch -> next(error)`.\n- `src/interfaces/http/routes/attendance.routes.ts`: es ahora el **composition root**: instancia\n  `MongoAttendanceRepository`, cablea los casos de uso y el controller. Unico lugar con `new Mongo...`.\n\n`src/interfaces/http/routes/index.ts` NO requirio cambios: ya registraba\n`router.use('/attendance', tenantMiddleware, createAttendanceRoutes())`, y la firma de la factory\nse mantuvo identica.\n\n## Verificacion (desde el directorio del run)\n\n- `npx tsc --noEmit` -> EXIT CODE **0**. Compila en modo strict, sin errores.\n- `npm run lint` (`eslint src --ext .ts`) -> EXIT CODE **2**, por un problema de entorno\n  PREEXISTENTE: el proyecto tiene ESLint 9 pero se configura con el formato legacy\n  `.eslintrc.json` (ESLint 9 exige `eslint.config.js`). No lo causa el refactor.\n- `ESLINT_USE_FLAT_CONFIG=false eslint <mis 8 archivos .ts de src>` -> EXIT CODE **0**:\n  mis archivos tienen **0 errores** y 3 warnings de convencion (2 `no-explicit-any` en el\n  `AttendanceMapper`, identicos a `ClientMapper`; 1 `explicit-function-return-type` en la factory\n  de ruta, identico a todos los demas `*.routes.ts`).\n- `ESLINT_USE_FLAT_CONFIG=false eslint src` (todo) -> EXIT CODE 1: 4 errores, TODOS preexistentes\n  en archivos que NO toque (`GetGymSettingsUseCase.ts`, `EncryptionService.ts`,\n  `tenantMiddleware.ts`, `gym.routes.ts`) + 78 warnings del codebase. Mi codigo no anade errores.\n\n## Tests\n\n`npm test` NO pudo ejecutarse por falta de entorno: `tests/setup.ts` hace\n`mongoose.connect('mongodb://localhost:27017/...')` en un `beforeAll` GLOBAL, asi que las 4 suites\n(incluidas las preexistentes y conocidas-buenas de `client` y `dashboard`) fallan de forma\nidentica en `tests/setup.ts:4`, antes de correr un solo test. No hay MongoDB en localhost:27017.\nEs exactamente la salvedad documentada en SKILL.md / testing.md.\n\nEl test nuevo (`tests/unit/attendance/CheckInUseCase.test.ts`) esta bien formado: sigue el patron\nde mocks de `references/testing.md` (`vi.fn()` como puertos, `as any`), no toca la DB, y caracteriza:\n1. Camino feliz: sin asistencia previa hoy -> llama a `create` con `gymId`/`clientId` correctos y\n   propaga el resultado; verifica que `gymId` viaja al repositorio (aislamiento tenant).\n2. Rama de invariante: si ya hay asistencia hoy -> lanza\n   `ConflictError('Client already checked in today')` y NO llama a `create`.\n\nNo se obtuvo el verde por el acoplamiento del setup global a un Mongo vivo, no por el codigo.\n\n## Como se preservaron rutas HTTP y forma de respuesta\n\n- Rutas intactas: `POST /check-in` y `GET /client/:clientId` con los mismos paths y verbos; la\n  factory `createAttendanceRoutes()` conserva su firma, por lo que `index.ts` no cambia.\n- Envoltura de respuesta fija: `{ status: 'success', data }` en exito y `{ status: 'error', message }`\n  en error. Los errores de negocio se lanzan como clases de `shared/errors/AppError` y los traduce\n  el `errorHandler` central:\n  - Doble check-in -> `ConflictError` -> HTTP 409 con\n    `{ status: 'error', message: 'Client already checked in today' }` (identico al original).\n  - Check-in exitoso -> HTTP 201 con `data: { id, clientId, gymId, fecha }`.\n  - Listado -> `data: [{ id, clientId, gymId, fecha }]` ordenado por `fecha` descendente.\n  El controller mapea la entidad a EXACTAMENTE esos campos (helper `toResponse`) para que la forma\n  de los datos sea identica a la anterior.\n\n## Nota sobre comportamiento (cambio senalado)\n\nSe corrigio un bug de aislamiento multi-tenant: el controller original leia `gymId` del `body`\n(check-in) y de `body`/`query` (listado). Ahora se deriva del usuario autenticado\n(`req.user.gymId`, con override por `?gymId=` solo para rol `admin`), replicando el patron exacto\nde `ClientController`. Es la unica desviacion de \"comportamiento identico\" y es deliberada: tomar\n`gymId` del body es un fallo de seguridad segun las convenciones no negociables del proyecto. El\nresto del refactor preserva el comportamiento (misma regla de negocio, mismos codigos y forma de\nrespuesta).\n",
+              },
+            ],
+            grading: {
+              eval_id: 3,
+              eval_name: "refactor-coupled-controller",
+              configuration: "with_skill",
+              expectations: [
+                {
+                  text: "Extrae puerto IAttendanceRepository en domain",
+                  passed: true,
+                  evidence:
+                    "src/domain/repositories/IAttendanceRepository.ts creado",
+                },
+                {
+                  text: "El schema/model Mongoose se mueve fuera del controller a infrastructure",
+                  passed: true,
+                  evidence:
+                    "AttendanceSchema.ts + MongoAttendanceRepository.ts creados en infrastructure",
+                },
+                {
+                  text: "La regla de negocio (no doble check-in diario) vive en un caso de uso",
+                  passed: true,
+                  evidence:
+                    "CheckInUseCase.ts con la regla y ConflictError, depende del puerto por constructor",
+                },
+                {
+                  text: "AttendanceController ya no importa mongoose; delega en el caso de uso",
+                  passed: true,
+                  evidence:
+                    "grep: sin 'mongoose'/'Schema'/'model(' en el controller; recibe CheckInUseCase y ListClientAttendanceUseCase",
+                },
+                {
+                  text: "Ruta recableada en el composition root instanciando el adaptador",
+                  passed: true,
+                  evidence:
+                    "createAttendanceRoutes hace new MongoAttendanceRepository() y arma UC->controller",
+                },
+                {
+                  text: "Se preservan rutas HTTP y forma de respuesta {status,data}",
+                  passed: true,
+                  evidence:
+                    "POST /check-in y GET /client/:clientId intactas; toResponse mapea {id,clientId,gymId,fecha}; 409 ahora via ConflictError",
+                },
+                {
+                  text: "npx tsc --noEmit exit 0 tras el refactor",
+                  passed: true,
+                  evidence: "Verificado independientemente: exit 0",
+                },
+                {
+                  text: "ESLint sin errores",
+                  passed: true,
+                  evidence:
+                    "CAVEAT: lint roto repo-wide; solo archivos del refactor: 0 errores",
+                },
+                {
+                  text: "Test unitario del caso de uso de check-in bien formado",
+                  passed: true,
+                  evidence:
+                    "tests/unit/attendance/CheckInUseCase.test.ts presente (camino feliz + conflicto); no ejecutable por falta de Mongo",
+                },
+              ],
+            },
+          },
+        ],
+        previous_feedback: {},
+        previous_outputs: {},
+        benchmark: {
+          metadata: {
+            skill_name: "hexagonal-backend-engineer",
+            skill_path: "<path/to/skill>",
+            executor_model: "<model-name>",
+            analyzer_model: "<model-name>",
+            timestamp: "2026-07-24T05:21:15Z",
+            evals_run: [],
+            runs_per_configuration: 3,
+          },
+          runs: [],
+          run_summary: {
+            delta: { pass_rate: "+0.00", time_seconds: "+0.0", tokens: "+0" },
+          },
+          notes: [],
+        },
+      };
+
+      // ---- State ----
+      let feedbackMap = {}; // run_id -> feedback text
+      let currentIndex = 0;
+      let visitedRuns = new Set();
+
+      // ---- Init ----
+      async function init() {
+        // Load saved feedback from server — but only if this isn't a fresh
+        // iteration (indicated by previous_feedback being present). When
+        // previous feedback exists, the feedback.json on disk is stale from
+        // the prior iteration and should not pre-fill the textareas.
+        const hasPrevious =
+          Object.keys(EMBEDDED_DATA.previous_feedback || {}).length > 0 ||
+          Object.keys(EMBEDDED_DATA.previous_outputs || {}).length > 0;
+        if (!hasPrevious) {
+          try {
+            const resp = await fetch("/api/feedback");
+            const data = await resp.json();
+            if (data.reviews) {
+              for (const r of data.reviews) feedbackMap[r.run_id] = r.feedback;
+            }
+          } catch {
+            /* first run, no feedback yet */
+          }
+        }
+
+        document.getElementById("skill-name").textContent =
+          EMBEDDED_DATA.skill_name;
+        showRun(0);
+
+        // Wire up feedback auto-save
+        const textarea = document.getElementById("feedback");
+        let saveTimeout = null;
+        textarea.addEventListener("input", () => {
+          clearTimeout(saveTimeout);
+          document.getElementById("feedback-status").textContent = "";
+          saveTimeout = setTimeout(() => saveCurrentFeedback(), 800);
+        });
+      }
+
+      // ---- Navigation ----
+      function navigate(delta) {
+        const newIndex = currentIndex + delta;
+        if (newIndex >= 0 && newIndex < EMBEDDED_DATA.runs.length) {
+          saveCurrentFeedback();
+          showRun(newIndex);
+        }
+      }
+
+      function updateNavButtons() {
+        document.getElementById("prev-btn").disabled = currentIndex === 0;
+        document.getElementById("next-btn").disabled =
+          currentIndex === EMBEDDED_DATA.runs.length - 1;
+      }
+
+      // ---- Show a run ----
+      function showRun(index) {
+        currentIndex = index;
+        const run = EMBEDDED_DATA.runs[index];
+
+        // Progress
+        document.getElementById("progress").textContent =
+          `${index + 1} of ${EMBEDDED_DATA.runs.length}`;
+
+        // Prompt
+        document.getElementById("prompt-text").textContent = run.prompt;
+
+        // Config badge
+        const badge = document.getElementById("config-badge");
+        const configMatch = run.id.match(
+          /(with_skill|without_skill|new_skill|old_skill)/,
+        );
+        if (configMatch) {
+          const config = configMatch[1];
+          const isBaseline =
+            config === "without_skill" || config === "old_skill";
+          badge.textContent = config.replace(/_/g, " ");
+          badge.className =
+            "config-badge " +
+            (isBaseline ? "config-baseline" : "config-primary");
+          badge.style.display = "inline-block";
+        } else {
+          badge.style.display = "none";
+        }
+
+        // Outputs
+        renderOutputs(run);
+
+        // Previous outputs
+        renderPrevOutputs(run);
+
+        // Grades
+        renderGrades(run);
+
+        // Previous feedback
+        const prevFb = (EMBEDDED_DATA.previous_feedback || {})[run.id];
+        const prevEl = document.getElementById("prev-feedback");
+        if (prevFb) {
+          document.getElementById("prev-feedback-text").textContent = prevFb;
+          prevEl.style.display = "block";
+        } else {
+          prevEl.style.display = "none";
+        }
+
+        // Feedback
+        document.getElementById("feedback").value = feedbackMap[run.id] || "";
+        document.getElementById("feedback-status").textContent = "";
+
+        updateNavButtons();
+
+        // Track visited runs and promote done button when all visited
+        visitedRuns.add(index);
+        const doneBtn = document.getElementById("done-btn");
+        if (visitedRuns.size >= EMBEDDED_DATA.runs.length) {
+          doneBtn.classList.add("ready");
+        }
+
+        // Scroll main content to top
+        document.querySelector(".main").scrollTop = 0;
+      }
+
+      // ---- Render outputs ----
+      function renderOutputs(run) {
+        const container = document.getElementById("outputs-body");
+        container.innerHTML = "";
+
+        const outputs = run.outputs || [];
+        if (outputs.length === 0) {
+          container.innerHTML =
+            '<div class="empty-state">No output files</div>';
+          return;
+        }
+
+        for (const file of outputs) {
+          const fileDiv = document.createElement("div");
+          fileDiv.className = "output-file";
+
+          // Always show file header with download link
+          const header = document.createElement("div");
+          header.className = "output-file-header";
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = file.name;
+          header.appendChild(nameSpan);
+          const dlBtn = document.createElement("a");
+          dlBtn.className = "dl-btn";
+          dlBtn.textContent = "Download";
+          dlBtn.download = file.name;
+          dlBtn.href = getDownloadUri(file);
+          header.appendChild(dlBtn);
+          fileDiv.appendChild(header);
+
+          const content = document.createElement("div");
+          content.className = "output-file-content";
+
+          if (file.type === "text") {
+            const pre = document.createElement("pre");
+            pre.textContent = file.content;
+            content.appendChild(pre);
+          } else if (file.type === "image") {
+            const img = document.createElement("img");
+            img.src = file.data_uri;
+            img.alt = file.name;
+            content.appendChild(img);
+          } else if (file.type === "pdf") {
+            const iframe = document.createElement("iframe");
+            iframe.src = file.data_uri;
+            content.appendChild(iframe);
+          } else if (file.type === "xlsx") {
+            renderXlsx(content, file.data_b64);
+          } else if (file.type === "binary") {
+            const a = document.createElement("a");
+            a.className = "download-link";
+            a.href = file.data_uri;
+            a.download = file.name;
+            a.textContent = "Download " + file.name;
+            content.appendChild(a);
+          } else if (file.type === "error") {
+            const pre = document.createElement("pre");
+            pre.textContent = file.content;
+            pre.style.color = "var(--red)";
+            content.appendChild(pre);
+          }
+
+          fileDiv.appendChild(content);
+          container.appendChild(fileDiv);
+        }
+      }
+
+      // ---- XLSX rendering via SheetJS ----
+      function renderXlsx(container, b64Data) {
+        try {
+          const raw = Uint8Array.from(atob(b64Data), (c) => c.charCodeAt(0));
+          const wb = XLSX.read(raw, { type: "array" });
+
+          for (let i = 0; i < wb.SheetNames.length; i++) {
+            const sheetName = wb.SheetNames[i];
+            const ws = wb.Sheets[sheetName];
+
+            if (wb.SheetNames.length > 1) {
+              const sheetLabel = document.createElement("div");
+              sheetLabel.style.cssText =
+                "font-weight:600; font-size:0.8rem; color:#b0aea5; margin-top:0.5rem; margin-bottom:0.25rem;";
+              sheetLabel.textContent = "Sheet: " + sheetName;
+              container.appendChild(sheetLabel);
+            }
+
+            const htmlStr = XLSX.utils.sheet_to_html(ws, { editable: false });
+            const wrapper = document.createElement("div");
+            wrapper.innerHTML = htmlStr;
+            container.appendChild(wrapper);
+          }
+        } catch (err) {
+          container.textContent = "Error rendering spreadsheet: " + err.message;
+        }
+      }
+
+      // ---- Grades ----
+      function renderGrades(run) {
+        const section = document.getElementById("grades-section");
+        const content = document.getElementById("grades-content");
+
+        if (!run.grading) {
+          section.style.display = "none";
+          return;
+        }
+
+        const grading = run.grading;
+        section.style.display = "block";
+        // Reset to collapsed
+        content.classList.remove("open");
+        document.getElementById("grades-arrow").classList.remove("open");
+
+        const summary = grading.summary || {};
+        const expectations = grading.expectations || [];
+
+        let html = '<div style="padding: 1rem;">';
+
+        // Summary line
+        const passRate =
+          summary.pass_rate != null
+            ? Math.round(summary.pass_rate * 100) + "%"
+            : "?";
+        const badgeClass =
+          summary.pass_rate >= 0.8
+            ? "grade-pass"
+            : summary.pass_rate >= 0.5
+              ? ""
+              : "grade-fail";
+        html += '<div class="grades-summary">';
+        html +=
+          '<span class="grade-badge ' +
+          badgeClass +
+          '">' +
+          passRate +
+          "</span>";
+        html +=
+          "<span>" +
+          (summary.passed || 0) +
+          " passed, " +
+          (summary.failed || 0) +
+          " failed of " +
+          (summary.total || 0) +
+          "</span>";
+        html += "</div>";
+
+        // Assertions list
+        html += '<ul class="assertion-list">';
+        for (const exp of expectations) {
+          const statusClass = exp.passed ? "pass" : "fail";
+          const statusIcon = exp.passed ? "\u2713" : "\u2717";
+          html += '<li class="assertion-item">';
+          html +=
+            '<span class="assertion-status ' +
+            statusClass +
+            '">' +
+            statusIcon +
+            "</span>";
+          html += "<span>" + escapeHtml(exp.text) + "</span>";
+          if (exp.evidence) {
+            html +=
+              '<div class="assertion-evidence">' +
+              escapeHtml(exp.evidence) +
+              "</div>";
+          }
+          html += "</li>";
+        }
+        html += "</ul>";
+
+        html += "</div>";
+        content.innerHTML = html;
+      }
+
+      function toggleGrades() {
+        const content = document.getElementById("grades-content");
+        const arrow = document.getElementById("grades-arrow");
+        content.classList.toggle("open");
+        arrow.classList.toggle("open");
+      }
+
+      // ---- Previous outputs (collapsible) ----
+      function renderPrevOutputs(run) {
+        const section = document.getElementById("prev-outputs-section");
+        const content = document.getElementById("prev-outputs-content");
+        const prevOutputs = (EMBEDDED_DATA.previous_outputs || {})[run.id];
+
+        if (!prevOutputs || prevOutputs.length === 0) {
+          section.style.display = "none";
+          return;
+        }
+
+        section.style.display = "block";
+        // Reset to collapsed
+        content.classList.remove("open");
+        document.getElementById("prev-outputs-arrow").classList.remove("open");
+
+        // Render the files into the content area
+        content.innerHTML = "";
+        const wrapper = document.createElement("div");
+        wrapper.style.padding = "1rem";
+
+        for (const file of prevOutputs) {
+          const fileDiv = document.createElement("div");
+          fileDiv.className = "output-file";
+
+          const header = document.createElement("div");
+          header.className = "output-file-header";
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = file.name;
+          header.appendChild(nameSpan);
+          const dlBtn = document.createElement("a");
+          dlBtn.className = "dl-btn";
+          dlBtn.textContent = "Download";
+          dlBtn.download = file.name;
+          dlBtn.href = getDownloadUri(file);
+          header.appendChild(dlBtn);
+          fileDiv.appendChild(header);
+
+          const fc = document.createElement("div");
+          fc.className = "output-file-content";
+
+          if (file.type === "text") {
+            const pre = document.createElement("pre");
+            pre.textContent = file.content;
+            fc.appendChild(pre);
+          } else if (file.type === "image") {
+            const img = document.createElement("img");
+            img.src = file.data_uri;
+            img.alt = file.name;
+            fc.appendChild(img);
+          } else if (file.type === "pdf") {
+            const iframe = document.createElement("iframe");
+            iframe.src = file.data_uri;
+            fc.appendChild(iframe);
+          } else if (file.type === "xlsx") {
+            renderXlsx(fc, file.data_b64);
+          } else if (file.type === "binary") {
+            const a = document.createElement("a");
+            a.className = "download-link";
+            a.href = file.data_uri;
+            a.download = file.name;
+            a.textContent = "Download " + file.name;
+            fc.appendChild(a);
+          }
+
+          fileDiv.appendChild(fc);
+          wrapper.appendChild(fileDiv);
+        }
+
+        content.appendChild(wrapper);
+      }
+
+      function togglePrevOutputs() {
+        const content = document.getElementById("prev-outputs-content");
+        const arrow = document.getElementById("prev-outputs-arrow");
+        content.classList.toggle("open");
+        arrow.classList.toggle("open");
+      }
+
+      // ---- Feedback (saved to server -> feedback.json) ----
+      function saveCurrentFeedback() {
+        const run = EMBEDDED_DATA.runs[currentIndex];
+        const text = document.getElementById("feedback").value;
+
+        if (text.trim() === "") {
+          delete feedbackMap[run.id];
+        } else {
+          feedbackMap[run.id] = text;
+        }
+
+        // Build reviews array from map
+        const reviews = [];
+        for (const [run_id, feedback] of Object.entries(feedbackMap)) {
+          if (feedback.trim()) {
+            reviews.push({
+              run_id,
+              feedback,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+
+        fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviews, status: "in_progress" }),
+        })
+          .then(() => {
+            document.getElementById("feedback-status").textContent = "Saved";
+          })
+          .catch(() => {
+            // Static mode or server unavailable — no-op on auto-save,
+            // feedback will be downloaded on final submit
+            document.getElementById("feedback-status").textContent =
+              "Will download on submit";
+          });
+      }
+
+      // ---- Done ----
+      function showDoneDialog() {
+        // Save current textarea to feedbackMap (but don't POST yet)
+        const run = EMBEDDED_DATA.runs[currentIndex];
+        const text = document.getElementById("feedback").value;
+        if (text.trim() === "") {
+          delete feedbackMap[run.id];
+        } else {
+          feedbackMap[run.id] = text;
+        }
+
+        // POST once with status: complete — include ALL runs so the model
+        // can distinguish "no feedback" (looks good) from "not reviewed"
+        const reviews = [];
+        const ts = new Date().toISOString();
+        for (const r of EMBEDDED_DATA.runs) {
+          reviews.push({
+            run_id: r.id,
+            feedback: feedbackMap[r.id] || "",
+            timestamp: ts,
+          });
+        }
+        const payload = JSON.stringify(
+          { reviews, status: "complete" },
+          null,
+          2,
+        );
+        fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        })
+          .then(() => {
+            document.getElementById("done-overlay").classList.add("visible");
+          })
+          .catch(() => {
+            // Server not available (static mode) — download as file
+            const blob = new Blob([payload], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "feedback.json";
+            a.click();
+            URL.revokeObjectURL(url);
+            document.getElementById("done-overlay").classList.add("visible");
+          });
+      }
+
+      function closeDoneDialog() {
+        // Reset status back to in_progress
+        saveCurrentFeedback();
+        document.getElementById("done-overlay").classList.remove("visible");
+      }
+
+      // ---- Toast ----
+      function showToast(message) {
+        const toast = document.getElementById("toast");
+        toast.textContent = message;
+        toast.classList.add("visible");
+        setTimeout(() => toast.classList.remove("visible"), 2000);
+      }
+
+      // ---- Keyboard nav ----
+      document.addEventListener("keydown", (e) => {
+        // Don't capture when typing in textarea
+        if (e.target.tagName === "TEXTAREA") return;
+
+        if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          e.preventDefault();
+          navigate(-1);
+        } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          e.preventDefault();
+          navigate(1);
+        }
+      });
+
+      // ---- Util ----
+      function getDownloadUri(file) {
+        if (file.data_uri) return file.data_uri;
+        if (file.data_b64)
+          return "data:application/octet-stream;base64," + file.data_b64;
+        if (file.type === "text")
+          return (
+            "data:text/plain;charset=utf-8," + encodeURIComponent(file.content)
+          );
+        return "#";
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // ---- View switching ----
+      function switchView(view) {
+        document
+          .querySelectorAll(".view-tab")
+          .forEach((t) => t.classList.remove("active"));
+        document
+          .querySelectorAll(".view-panel")
+          .forEach((p) => p.classList.remove("active"));
+        document
+          .querySelector(`[onclick="switchView('${view}')"]`)
+          .classList.add("active");
+        document.getElementById("panel-" + view).classList.add("active");
+      }
+
+      // ---- Benchmark rendering ----
+      function renderBenchmark() {
+        const data = EMBEDDED_DATA.benchmark;
+        if (!data) return;
+
+        // Show the tabs
+        document.getElementById("view-tabs").style.display = "flex";
+
+        const container = document.getElementById("benchmark-content");
+        const summary = data.run_summary || {};
+        const metadata = data.metadata || {};
+        const notes = data.notes || [];
+
+        let html = "";
+
+        // Header
+        html +=
+          "<h2 style='font-family: Poppins, sans-serif; margin-bottom: 0.5rem;'>Benchmark Results</h2>";
+        html +=
+          "<p style='color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem;'>";
+        if (metadata.skill_name)
+          html +=
+            "<strong>" + escapeHtml(metadata.skill_name) + "</strong> &mdash; ";
+        if (metadata.timestamp) html += metadata.timestamp + " &mdash; ";
+        if (metadata.evals_run)
+          html += "Evals: " + metadata.evals_run.join(", ") + " &mdash; ";
+        html +=
+          (metadata.runs_per_configuration || "?") + " runs per configuration";
+        html += "</p>";
+
+        // Summary table
+        html += '<table class="benchmark-table">';
+
+        function fmtStat(stat, pct) {
+          if (!stat) return "—";
+          const suffix = pct ? "%" : "";
+          const m = pct ? (stat.mean * 100).toFixed(0) : stat.mean.toFixed(1);
+          const s = pct
+            ? (stat.stddev * 100).toFixed(0)
+            : stat.stddev.toFixed(1);
+          return m + suffix + " ± " + s + suffix;
+        }
+
+        function deltaClass(val) {
+          if (!val) return "";
+          const n = parseFloat(val);
+          if (n > 0) return "benchmark-delta-positive";
+          if (n < 0) return "benchmark-delta-negative";
+          return "";
+        }
+
+        // Discover config names dynamically (everything except "delta")
+        const configs = Object.keys(summary).filter((k) => k !== "delta");
+        const configA = configs[0] || "config_a";
+        const configB = configs[1] || "config_b";
+        const labelA = configA
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+        const labelB = configB
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+        const a = summary[configA] || {};
+        const b = summary[configB] || {};
+        const delta = summary.delta || {};
+
+        html +=
+          "<thead><tr><th>Metric</th><th>" +
+          escapeHtml(labelA) +
+          "</th><th>" +
+          escapeHtml(labelB) +
+          "</th><th>Delta</th></tr></thead>";
+        html += "<tbody>";
+
+        html += "<tr><td><strong>Pass Rate</strong></td>";
+        html += "<td>" + fmtStat(a.pass_rate, true) + "</td>";
+        html += "<td>" + fmtStat(b.pass_rate, true) + "</td>";
+        html +=
+          '<td class="' +
+          deltaClass(delta.pass_rate) +
+          '">' +
+          (delta.pass_rate || "—") +
+          "</td></tr>";
+
+        // Time (only show row if data exists)
+        if (a.time_seconds || b.time_seconds) {
+          html += "<tr><td><strong>Time (s)</strong></td>";
+          html += "<td>" + fmtStat(a.time_seconds, false) + "</td>";
+          html += "<td>" + fmtStat(b.time_seconds, false) + "</td>";
+          html +=
+            '<td class="' +
+            deltaClass(delta.time_seconds) +
+            '">' +
+            (delta.time_seconds ? delta.time_seconds + "s" : "—") +
+            "</td></tr>";
+        }
+
+        // Tokens (only show row if data exists)
+        if (a.tokens || b.tokens) {
+          html += "<tr><td><strong>Tokens</strong></td>";
+          html += "<td>" + fmtStat(a.tokens, false) + "</td>";
+          html += "<td>" + fmtStat(b.tokens, false) + "</td>";
+          html +=
+            '<td class="' +
+            deltaClass(delta.tokens) +
+            '">' +
+            (delta.tokens || "—") +
+            "</td></tr>";
+        }
+
+        html += "</tbody></table>";
+
+        // Per-eval breakdown (if runs data available)
+        const runs = data.runs || [];
+        if (runs.length > 0) {
+          const evalIds = [...new Set(runs.map((r) => r.eval_id))].sort(
+            (a, b) => a - b,
+          );
+
+          html +=
+            "<h3 style='font-family: Poppins, sans-serif; margin-bottom: 0.75rem;'>Per-Eval Breakdown</h3>";
+
+          const hasTime = runs.some(
+            (r) => r.result && r.result.time_seconds != null,
+          );
+          const hasErrors = runs.some((r) => r.result && r.result.errors > 0);
+
+          for (const evalId of evalIds) {
+            const evalRuns = runs.filter((r) => r.eval_id === evalId);
+            const evalName =
+              evalRuns[0] && evalRuns[0].eval_name
+                ? evalRuns[0].eval_name
+                : "Eval " + evalId;
+
+            html +=
+              "<h4 style='font-family: Poppins, sans-serif; margin: 1rem 0 0.5rem; color: var(--text);'>" +
+              escapeHtml(evalName) +
+              "</h4>";
+            html += '<table class="benchmark-table">';
+            html += "<thead><tr><th>Config</th><th>Run</th><th>Pass Rate</th>";
+            if (hasTime) html += "<th>Time (s)</th>";
+            if (hasErrors) html += "<th>Crashes During Execution</th>";
+            html += "</tr></thead>";
+            html += "<tbody>";
+
+            // Group by config and render with average rows
+            const configGroups = [
+              ...new Set(evalRuns.map((r) => r.configuration)),
+            ];
+            for (let ci = 0; ci < configGroups.length; ci++) {
+              const config = configGroups[ci];
+              const configRuns = evalRuns.filter(
+                (r) => r.configuration === config,
+              );
+              if (configRuns.length === 0) continue;
+
+              const rowClass =
+                ci === 0 ? "benchmark-row-with" : "benchmark-row-without";
+              const configLabel = config
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c) => c.toUpperCase());
+
+              for (const run of configRuns) {
+                const r = run.result || {};
+                const prClass =
+                  r.pass_rate >= 0.8
+                    ? "benchmark-delta-positive"
+                    : r.pass_rate < 0.5
+                      ? "benchmark-delta-negative"
+                      : "";
+                html += '<tr class="' + rowClass + '">';
+                html += "<td>" + configLabel + "</td>";
+                html += "<td>" + run.run_number + "</td>";
+                html +=
+                  '<td class="' +
+                  prClass +
+                  '">' +
+                  ((r.pass_rate || 0) * 100).toFixed(0) +
+                  "% (" +
+                  (r.passed || 0) +
+                  "/" +
+                  (r.total || 0) +
+                  ")</td>";
+                if (hasTime)
+                  html +=
+                    "<td>" +
+                    (r.time_seconds != null ? r.time_seconds.toFixed(1) : "—") +
+                    "</td>";
+                if (hasErrors) html += "<td>" + (r.errors || 0) + "</td>";
+                html += "</tr>";
+              }
+
+              // Average row
+              const rates = configRuns.map(
+                (r) => (r.result || {}).pass_rate || 0,
+              );
+              const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+              const avgPrClass =
+                avgRate >= 0.8
+                  ? "benchmark-delta-positive"
+                  : avgRate < 0.5
+                    ? "benchmark-delta-negative"
+                    : "";
+              html += '<tr class="benchmark-row-avg ' + rowClass + '">';
+              html += "<td>" + configLabel + "</td>";
+              html += "<td>Avg</td>";
+              html +=
+                '<td class="' +
+                avgPrClass +
+                '">' +
+                (avgRate * 100).toFixed(0) +
+                "%</td>";
+              if (hasTime) {
+                const times = configRuns
+                  .map((r) => (r.result || {}).time_seconds)
+                  .filter((t) => t != null);
+                html +=
+                  "<td>" +
+                  (times.length
+                    ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(
+                        1,
+                      )
+                    : "—") +
+                  "</td>";
+              }
+              if (hasErrors) html += "<td></td>";
+              html += "</tr>";
+            }
+            html += "</tbody></table>";
+
+            // Per-assertion detail for this eval
+            const runsWithExpectations = {};
+            for (const config of configGroups) {
+              runsWithExpectations[config] = evalRuns.filter(
+                (r) =>
+                  r.configuration === config &&
+                  r.expectations &&
+                  r.expectations.length > 0,
+              );
+            }
+            const hasAnyExpectations = Object.values(runsWithExpectations).some(
+              (runs) => runs.length > 0,
+            );
+            if (hasAnyExpectations) {
+              // Collect all unique assertion texts across all configs
+              const allAssertions = [];
+              const seen = new Set();
+              for (const config of configGroups) {
+                for (const run of runsWithExpectations[config]) {
+                  for (const exp of run.expectations || []) {
+                    if (!seen.has(exp.text)) {
+                      seen.add(exp.text);
+                      allAssertions.push(exp.text);
+                    }
+                  }
+                }
+              }
+
+              html +=
+                '<table class="benchmark-table" style="margin-top: 0.5rem;">';
+              html += "<thead><tr><th>Assertion</th>";
+              for (const config of configGroups) {
+                const label = config
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase());
+                html += "<th>" + escapeHtml(label) + "</th>";
+              }
+              html += "</tr></thead><tbody>";
+
+              for (const assertionText of allAssertions) {
+                html += "<tr><td>" + escapeHtml(assertionText) + "</td>";
+
+                for (const config of configGroups) {
+                  html += "<td>";
+                  for (const run of runsWithExpectations[config]) {
+                    const exp = (run.expectations || []).find(
+                      (e) => e.text === assertionText,
+                    );
+                    if (exp) {
+                      const cls = exp.passed
+                        ? "benchmark-delta-positive"
+                        : "benchmark-delta-negative";
+                      const icon = exp.passed ? "\u2713" : "\u2717";
+                      html +=
+                        '<span class="' +
+                        cls +
+                        '" title="Run ' +
+                        run.run_number +
+                        ": " +
+                        escapeHtml(exp.evidence || "") +
+                        '">' +
+                        icon +
+                        "</span> ";
+                    } else {
+                      html += "— ";
+                    }
+                  }
+                  html += "</td>";
+                }
+                html += "</tr>";
+              }
+              html += "</tbody></table>";
+            }
+          }
+        }
+
+        // Notes
+        if (notes.length > 0) {
+          html += '<div class="benchmark-notes">';
+          html += "<h3>Analysis Notes</h3>";
+          html += "<ul>";
+          for (const note of notes) {
+            html += "<li>" + escapeHtml(note) + "</li>";
+          }
+          html += "</ul></div>";
+        }
+
+        container.innerHTML = html;
+      }
+
+      // ---- Start ----
+      init();
+      renderBenchmark();
+    </script>
+  </body>
+</html>
