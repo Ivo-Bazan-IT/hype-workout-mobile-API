@@ -15,13 +15,13 @@ export class UpdateClientUseCase {
     // Verificar que el cliente existe
     const existingClient = await this.clientRepository.findById(dto.clientId, dto.gymId);
     if (!existingClient) {
-      throw new NotFoundError('Client not found');
+      throw new NotFoundError('Client');
     }
 
     const clienteActualizado = await this.clientRepository.update(dto.clientId, dto.gymId, dto.data);
 
     if (!clienteActualizado) {
-      throw new NotFoundError('Client not found');
+      throw new NotFoundError('Client');
     }
 
     return clienteActualizado;

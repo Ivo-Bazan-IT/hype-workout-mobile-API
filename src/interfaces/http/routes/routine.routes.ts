@@ -48,16 +48,18 @@ const createRoutineRouter = () => {
     routineController.generate(req, res, next)
   );
 
-  router.get('/:id', (req, res, next) =>
-    routineController.get(req, res, next)
+  // Las rutas estáticas van ANTES de /:id: Express matchea en orden de registro,
+  // así que /expiring caería en /:id con id="expiring" y devolvería 404.
+  router.get('/expiring', (req, res, next) =>
+    routineController.getExpiring(req, res, next)
   );
 
   router.get('/client/:clientId', (req, res, next) =>
     routineController.getByClient(req, res, next)
   );
 
-  router.get('/expiring', (req, res, next) =>
-    routineController.getExpiring(req, res, next)
+  router.get('/:id', (req, res, next) =>
+    routineController.get(req, res, next)
   );
 
   router.post('/:id/resend', (req, res, next) =>

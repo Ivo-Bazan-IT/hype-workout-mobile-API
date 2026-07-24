@@ -14,6 +14,7 @@ export class MongoClientRepository implements IClientRepository {
       estado: client.estado,
       fechaInicio: client.fechaInicio,
       fechaVencimiento: client.fechaVencimiento,
+      encuestaData: client.encuestaData,
     });
     return ClientMapper.toDomain(doc);
   }

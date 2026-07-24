@@ -25,4 +25,8 @@ const userSchema = new Schema<UserDocument>({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+// Índices para el listado del super-admin (filtros por gym, rol y estado)
+userSchema.index({ gymId: 1 });
+userSchema.index({ role: 1, isActive: 1 });
+
 export const UserModel = model<UserDocument>('User', userSchema);

@@ -32,8 +32,9 @@ export class GenerateRoutineUseCase {
       throw new NotFoundError('Gym');
     }
 
-    // Verificar que el cliente tiene encuestaData
-    if (!client.encuestaData) {
+    // Verificar que el cliente tiene encuestaData. Un objeto vacío también es
+    // inválido: sin respuestas no hay nada que personalizar.
+    if (!client.encuestaData || Object.keys(client.encuestaData).length === 0) {
       throw new ValidationError('Client has no survey data. Complete the onboarding form first.');
     }
 
@@ -58,7 +59,7 @@ export class GenerateRoutineUseCase {
       const aiProvider = this.aiProviderFactory.create(gym.aiConfig.provider, aiApiKey);
       const iaResult = await aiProvider.generateRoutine({
         promptTemplate: gym.aiConfig.promptTemplate,
-        encuestaData: client.encuestaData || {}
+        encuestaData: client.encuestaData
       });
 
       // 3. Guardar contenido generado

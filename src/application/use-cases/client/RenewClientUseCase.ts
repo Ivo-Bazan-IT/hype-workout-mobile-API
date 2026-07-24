@@ -27,7 +27,7 @@ export class RenewClientUseCase {
     const existingClient = await this.clientRepository.findById(dto.clientId, dto.gymId);
 
     if (!existingClient) {
-      throw new NotFoundError('Client not found');
+      throw new NotFoundError('Client');
     }
 
     if (dto.monto <= 0) {

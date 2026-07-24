@@ -5,6 +5,7 @@ import { onboardingRoutes } from './onboarding.routes';
 import { routineRoutes } from './routine.routes';
 import { createClientRoutes } from './client.routes';
 import { createDashboardRouter } from './dashboard.routes';
+import { createAdminUserRoutes } from './user.routes';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { requireAdmin } from '../middlewares/roleMiddleware';
@@ -20,6 +21,9 @@ router.use(authMiddleware);
 
 // Admin routes (for managing gyms) - CRUD completo de gyms
 router.use('/admin/gyms', requireAdmin, adminGymRoutes);
+
+// Admin routes (for managing gym owner users) - CRUD completo de usuarios
+router.use('/admin/users', requireAdmin, createAdminUserRoutes());
 
 // Routes that need auth + tenant
 router.use('/gyms', tenantMiddleware, gymRoutes);

@@ -21,7 +21,7 @@ export class UpdateAfipConfigUseCase {
     const gym = await this.gymRepository.findById(dto.gymId);
 
     if (!gym) {
-      throw new NotFoundError('Gym not found');
+      throw new NotFoundError('Gym');
     }
 
     const currentAfipConfig = gym.afipConfig || {

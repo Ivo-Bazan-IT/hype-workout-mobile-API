@@ -36,6 +36,16 @@ export const updateGymSchema = z.object({
   }).optional(),
 });
 
+export const updateAiConfigSchema = z
+  .object({
+    promptTemplate: z.string().min(1, 'Prompt template is required').optional(),
+    provider: z.enum(['openai', 'anthropic']).optional(),
+    model: z.string().min(1).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
+
 export const updateAfipConfigSchema = z.object({
   apiKey: z.string().min(1).optional(),
   puntoVenta: z.number().int().positive().optional(),

@@ -5,10 +5,11 @@ import { UpdateGymUseCase } from '../../../application/use-cases/gym/UpdateGymUs
 import { DeleteGymUseCase } from '../../../application/use-cases/gym/DeleteGymUseCase';
 import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseCase';
 import { UpdateAfipConfigUseCase } from '../../../application/use-cases/gym/UpdateAfipConfigUseCase';
+import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/UpdateAiConfigUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
-import { createGymSchema, updateGymSchema, updateAfipConfigSchema } from '../validators/gym.validator';
+import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema } from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 
@@ -61,6 +62,7 @@ const createUserGymRouter = () => {
     gymRepository,
     new EncryptionService()
   );
+  const updateAiConfigUseCase = new UpdateAiConfigUseCase(gymRepository);
 
   router.get('/settings', async (req: AuthenticatedRequest, res, next) => {
     try {
@@ -107,24 +109,28 @@ const createUserGymRouter = () => {
     }
   });
 
-  router.put('/settings/ai-prompt', async (req: AuthenticatedRequest, res, next) => {
-    try {
-      const user = req.user;
-      if (!user?.gymId) {
-        res.status(403).json({ status: 'error', message: 'Gym access required' });
-        return;
+  router.put(
+    '/settings/ai-prompt',
+    validateBody(updateAiConfigSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const user = req.user;
+        if (!user?.gymId) {
+          res.status(403).json({ status: 'error', message: 'Gym access required' });
+          return;
+        }
+
+        const updatedGym = await updateAiConfigUseCase.execute({
+          gymId: user.gymId,
+          ...req.body,
+        });
+
+        res.json({ status: 'success', data: { aiConfig: updatedGym.aiConfig } });
+      } catch (error) {
+        next(error);
       }
-
-      const { promptTemplate } = req.body;
-      const gym = await gymRepository.update(user.gymId, {
-        aiConfig: { promptTemplate } as any
-      });
-
-      res.json({ status: 'success', data: { aiConfig: gym?.aiConfig } });
-    } catch (error) {
-      next(error);
     }
-  });
+  );
 
   router.put(
     '/settings/afip',

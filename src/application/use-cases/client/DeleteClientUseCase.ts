@@ -14,7 +14,7 @@ export class DeleteClientUseCase {
     const deleted = await this.clientRepository.delete(dto.clientId, dto.gymId);
 
     if (!deleted) {
-      throw new NotFoundError('Client not found');
+      throw new NotFoundError('Client');
     }
 
     return true;

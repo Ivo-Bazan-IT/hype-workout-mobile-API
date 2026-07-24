@@ -3,6 +3,7 @@ import { AuthController } from '../controllers/AuthController';
 import { LoginUseCase } from '../../../application/use-cases/auth/LoginUseCase';
 import { RefreshTokenUseCase } from '../../../application/use-cases/auth/RefreshTokenUseCase';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
+import { authMiddleware } from '../middlewares/authMiddleware';
 import rateLimit from 'express-rate-limit';
 
 const createAuthRouter = () => {
@@ -22,7 +23,10 @@ const createAuthRouter = () => {
   router.post('/login', authLimiter, (req, res, next) => authController.login(req, res, next));
   router.post('/refresh', (req, res, next) => authController.refresh(req, res, next));
   router.post('/logout', (req, res, next) => authController.logout(req, res, next));
-  router.get('/me', (req, res, next) => authController.me(req, res, next));
+  // Este router se monta ANTES del authMiddleware global (login/refresh/logout son
+  // públicos), así que /me necesita aplicarlo explícitamente: sin esto req.user
+  // llega undefined y el handler revienta con 500 en vez de responder 401.
+  router.get('/me', authMiddleware, (req, res, next) => authController.me(req, res, next));
 
   return router;
 };

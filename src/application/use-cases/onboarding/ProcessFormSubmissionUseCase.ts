@@ -39,9 +39,19 @@ export class ProcessFormSubmissionUseCase {
     const existingClient = await this.clientRepository.findByDocumento(documento, payload.gymId);
 
     if (existingClient) {
-      // Actualizar encuesta data si el cliente existe
+      // Unificar, no reemplazar: las respuestas nuevas se fusionan sobre las previas
+      // para que un reenvío parcial del formulario no borre lo ya contestado.
+      // Los datos de contacto se refrescan con lo último que envió el cliente.
+      const encuestaData = {
+        ...(existingClient.encuestaData || {}),
+        ...respuestas
+      };
+
       return this.clientRepository.update(existingClient.id, payload.gymId, {
-        encuestaData: respuestas
+        nombre,
+        telefono,
+        email,
+        encuestaData
       }) as Promise<Client>;
     }
 
