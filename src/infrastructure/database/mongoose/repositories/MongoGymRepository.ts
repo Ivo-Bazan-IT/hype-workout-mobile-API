@@ -1,9 +1,7 @@
 import { GymModel, GymDocument } from '../schemas/GymSchema';
 import { IGymRepository } from '../../../../domain/repositories/IGymRepository';
-import { IGymSecretsRepository } from '../../../../domain/repositories/IGymRepository';
 import { Gym } from '../../../../domain/entities/Gym';
 import { GymMapper } from '../../../../domain/entities/Gym';
-import { EncryptionService } from '../../../encryption/EncryptionService';
 
 export class MongoGymRepository implements IGymRepository {
   async create(gym: Omit<Gym, 'id' | 'createdAt' | 'updatedAt'>): Promise<Gym> {
@@ -60,46 +58,5 @@ export class MongoGymRepository implements IGymRepository {
     // Soft delete - isActive = false
     const doc = await GymModel.findByIdAndUpdate(id, { isActive: false });
     return !!doc;
-  }
-}
-
-// Implementación temporal usando env vars - debería conectarse a secret manager
-export class EnvGymSecretsRepository implements IGymSecretsRepository {
-  async getWhatsappAccessToken(_gymId: string): Promise<string | null> {
-    // En una implementación real, esto leería de AWS Secrets Manager, Doppler, etc.
-    // Basado en tokenSecretRef del gym
-    // Por ahora devolvemos el default de env:
-    return process.env.WHATSAPP_DEFAULT_ACCESS_TOKEN || null;
-  }
-
-  async getAiApiKey(_gymId: string, provider: 'openai' | 'anthropic'): Promise<string | null> {
-    if (provider === 'openai') return process.env.OPENAI_API_KEY || null;
-    if (provider === 'anthropic') return process.env.ANTHROPIC_API_KEY || null;
-    return null;
-  }
-
-  async getAfipApiKey(gymId: string): Promise<string | null> {
-    // Estrategia de fallback:
-    // 1. Primero intentar obtener desde secret manager externo (apiKeySecretRef)
-    // 2. Si no hay secret ref, intentar con API key encriptada en BD
-    // 3. Fallback a variable de entorno
-
-    const gym = await GymModel.findById(gymId);
-
-    if (!gym || !gym.afipConfig?.isActive) {
-      return process.env.AFIP_SDK_API_KEY || null;
-    }
-
-    // Priorizar API key encriptada si existe
-    if ((gym.afipConfig as any).encryptedApiKey) {
-      try {
-        return EncryptionService.decrypt((gym.afipConfig as any).encryptedApiKey);
-      } catch (error) {
-        console.error(`Error decrypting AFIP key for gym ${gymId}:`, error);
-      }
-    }
-
-    // Fallback a env var
-    return process.env.AFIP_SDK_API_KEY || null;
   }
 }

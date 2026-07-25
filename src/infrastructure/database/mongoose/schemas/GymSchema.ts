@@ -9,13 +9,15 @@ export interface GymDocument {
   contactPhone: string;
   isActive: boolean;
   aiConfig: {
-    provider: 'openai' | 'anthropic';
+    provider: 'deepseek' | 'openai' | 'anthropic';
     promptTemplate: string;
     model?: string;
+    encryptedApiKey?: string; // AES-256-GCM encrypted (BYOK por gym)
   };
   whatsappConfig: {
     phoneNumberId: string;
     tokenSecretRef: string;
+    encryptedAccessToken?: string; // AES-256-GCM encrypted (BYOK por gym)
   };
   pdfTemplate: {
     storagePath?: string;
@@ -45,14 +47,18 @@ const gymSchema = new Schema<GymDocument>({
   isActive: { type: Boolean, default: true },
 
   aiConfig: {
-    provider: { type: String, enum: ['openai', 'anthropic'], default: 'openai' },
+    provider: { type: String, enum: ['deepseek', 'openai', 'anthropic'], default: 'deepseek' },
     promptTemplate: { type: String, required: true },
     model: { type: String },
+    encryptedApiKey: { type: String }, // AES-256-GCM encrypted (BYOK por gym)
   },
 
   whatsappConfig: {
-    phoneNumberId: { type: String, required: true },
-    tokenSecretRef: { type: String, required: true },
+    // No es required: un gym puede existir antes de configurar WhatsApp, y Mongoose
+    // rechaza la cadena vacía en un campo required (rompía el alta de todo tenant).
+    phoneNumberId: { type: String, default: '' },
+    tokenSecretRef: { type: String, default: '' },
+    encryptedAccessToken: { type: String }, // AES-256-GCM encrypted (BYOK por gym)
   },
 
   pdfTemplate: {

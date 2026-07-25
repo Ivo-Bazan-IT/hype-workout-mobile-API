@@ -6,13 +6,20 @@ interface CreateClientDTO {
   gymId: string;
   nombre: string;
   documento: string;
-  telefono: string;
+  telefono?: string;
   email?: string;
-  fechaInicio: Date;
-  fechaVencimiento: Date;
+  fechaInicio?: Date;
+  fechaVencimiento?: Date;
   encuestaData?: Record<string, any>;
 }
 
+const DIAS_MEMBRESIA_POR_DEFECTO = 30;
+
+/**
+ * Alta de cliente. Solo `nombre` y `documento` son obligatorios: el resto de los
+ * datos (teléfono, objetivos, entrenamientos por semana...) se completa después
+ * con UpdateClientSurveyUseCase.
+ */
 export class CreateClientUseCase {
   constructor(private clientRepository: IClientRepository) {}
 
@@ -23,6 +30,15 @@ export class CreateClientUseCase {
       throw new ValidationError('A client with this documento already exists');
     }
 
+    const fechaInicio = dto.fechaInicio || new Date();
+
+    let fechaVencimiento = dto.fechaVencimiento;
+    if (!fechaVencimiento) {
+      // Mismo criterio que el onboarding por formulario: 30 días desde el inicio
+      fechaVencimiento = new Date(fechaInicio);
+      fechaVencimiento.setDate(fechaVencimiento.getDate() + DIAS_MEMBRESIA_POR_DEFECTO);
+    }
+
     return this.clientRepository.create({
       gymId: dto.gymId,
       nombre: dto.nombre,
@@ -30,8 +46,8 @@ export class CreateClientUseCase {
       telefono: dto.telefono,
       email: dto.email,
       estado: 'activo',
-      fechaInicio: dto.fechaInicio,
-      fechaVencimiento: dto.fechaVencimiento,
+      fechaInicio,
+      fechaVencimiento,
       encuestaData: dto.encuestaData
     });
   }

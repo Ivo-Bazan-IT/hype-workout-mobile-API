@@ -82,7 +82,7 @@ export class RenewClientUseCase {
             cae: result.cae,
             monto: dto.monto,
             estado: 'emitida'
-          } as any);
+          });
 
           console.log(`✅ Invoice generated for client ${dto.clientId} - CAE: ${result.cae}`);
         }
@@ -99,7 +99,7 @@ export class RenewClientUseCase {
         monto: dto.monto,
         estado: 'error',
         errorLog: error.message
-      } as any);
+      });
     }
 
     return clienteActualizado!;

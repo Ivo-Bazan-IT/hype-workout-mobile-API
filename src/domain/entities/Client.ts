@@ -12,7 +12,9 @@ export interface Client {
   gymId: string;
   nombre: string;
   documento: string;
-  telefono: string;
+  // Opcional: un cliente puede darse de alta solo con nombre y documento, y
+  // completarse después con la encuesta (PATCH /api/clients/:id/encuesta).
+  telefono?: string;
   email?: string;
   estado: ClientStatus;
   fechaInicio: Date;
@@ -30,7 +32,7 @@ export class ClientEntity implements Client {
     public gymId: string,
     public nombre: string,
     public documento: string,
-    public telefono: string,
+    public telefono: string | undefined,
     public estado: ClientStatus = 'pendiente',
     public fechaInicio: Date = new Date(),
     public fechaVencimiento: Date = new Date(),

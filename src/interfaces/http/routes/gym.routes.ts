@@ -6,12 +6,16 @@ import { DeleteGymUseCase } from '../../../application/use-cases/gym/DeleteGymUs
 import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseCase';
 import { UpdateAfipConfigUseCase } from '../../../application/use-cases/gym/UpdateAfipConfigUseCase';
 import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/UpdateAiConfigUseCase';
+import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
-import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema } from '../validators/gym.validator';
+import { Gym } from '../../../domain/entities/Gym';
+import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema, updateWhatsappConfigSchema } from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
+import { NotFoundError } from '../../../shared/errors/AppError';
 
 const createAdminGymRouter = () => {
   const router = Router();
@@ -54,33 +58,50 @@ const createAdminGymRouter = () => {
   return router;
 };
 
+/**
+ * Proyecciones seguras de la config del gym.
+ *
+ * Las credenciales BYOK viven cifradas dentro de `aiConfig`/`whatsappConfig`, así que
+ * devolver esos objetos enteros filtraría el ciphertext. Se exponen solo los campos
+ * editables más un booleano que le dice al front si la credencial ya está cargada.
+ */
+const toSafeAiConfig = (gym: Gym) => ({
+  provider: gym.aiConfig?.provider,
+  promptTemplate: gym.aiConfig?.promptTemplate,
+  model: gym.aiConfig?.model,
+  hasApiKey: Boolean(gym.aiConfig?.encryptedApiKey),
+});
+
+const toSafeWhatsappConfig = (gym: Gym) => ({
+  phoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,
+  hasAccessToken: Boolean(gym.whatsappConfig?.encryptedAccessToken),
+});
+
 const createUserGymRouter = () => {
   const router = Router();
 
   const gymRepository = new MongoGymRepository();
-  const updateAfipConfigUseCase = new UpdateAfipConfigUseCase(
+  const encryptionService = new EncryptionService();
+
+  const updateAfipConfigUseCase = new UpdateAfipConfigUseCase(gymRepository, encryptionService);
+  const updateAiConfigUseCase = new UpdateAiConfigUseCase(gymRepository, encryptionService);
+  const updateWhatsappConfigUseCase = new UpdateWhatsappConfigUseCase(
     gymRepository,
-    new EncryptionService()
+    encryptionService
   );
-  const updateAiConfigUseCase = new UpdateAiConfigUseCase(gymRepository);
 
   router.get('/settings', async (req: AuthenticatedRequest, res, next) => {
     try {
-      const user = req.user;
-      if (!user?.gymId) {
-        res.status(403).json({ status: 'error', message: 'Gym access required' });
-        return;
-      }
+      const gymId = getTenantId(req);
 
-      const gym = await gymRepository.findById(user.gymId);
+      const gym = await gymRepository.findById(gymId);
       if (!gym) {
-        res.status(404).json({ status: 'error', message: 'Gym not found' });
-        return;
+        throw new NotFoundError('Gym');
       }
 
       // Allowlist explícito: solo campos no sensibles. Nunca exponer secretos
-      // (whatsappConfig.tokenSecretRef, afipConfig.encryptedApiKey/apiKeySecretRef,
-      // googleFormConfig.webhookSecret).
+      // (whatsappConfig.tokenSecretRef/encryptedAccessToken, aiConfig.encryptedApiKey,
+      // afipConfig.encryptedApiKey/apiKeySecretRef, googleFormConfig.webhookSecret).
       const safeGym = {
         id: gym.id,
         name: gym.name,
@@ -89,8 +110,10 @@ const createUserGymRouter = () => {
         contactEmail: gym.contactEmail,
         contactPhone: gym.contactPhone,
         isActive: gym.isActive,
-        aiConfig: gym.aiConfig,
+        aiConfig: toSafeAiConfig(gym),
         pdfTemplate: gym.pdfTemplate,
+        whatsappConfig: toSafeWhatsappConfig(gym),
+        // Se mantiene el campo plano por compatibilidad con el front actual
         whatsappPhoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,
         googleFormConfig: { formId: gym.googleFormConfig?.formId },
         afipConfig: gym.afipConfig
@@ -114,18 +137,32 @@ const createUserGymRouter = () => {
     validateBody(updateAiConfigSchema),
     async (req: AuthenticatedRequest, res, next) => {
       try {
-        const user = req.user;
-        if (!user?.gymId) {
-          res.status(403).json({ status: 'error', message: 'Gym access required' });
-          return;
-        }
-
         const updatedGym = await updateAiConfigUseCase.execute({
-          gymId: user.gymId,
+          gymId: getTenantId(req),
           ...req.body,
         });
 
-        res.json({ status: 'success', data: { aiConfig: updatedGym.aiConfig } });
+        res.json({ status: 'success', data: { aiConfig: toSafeAiConfig(updatedGym) } });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.put(
+    '/settings/whatsapp',
+    validateBody(updateWhatsappConfigSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const updatedGym = await updateWhatsappConfigUseCase.execute({
+          gymId: getTenantId(req),
+          ...req.body,
+        });
+
+        res.json({
+          status: 'success',
+          data: { whatsappConfig: toSafeWhatsappConfig(updatedGym) },
+        });
       } catch (error) {
         next(error);
       }
@@ -137,14 +174,8 @@ const createUserGymRouter = () => {
     validateBody(updateAfipConfigSchema),
     async (req: AuthenticatedRequest, res, next) => {
       try {
-        const user = req.user;
-        if (!user?.gymId) {
-          res.status(403).json({ status: 'error', message: 'Gym access required' });
-          return;
-        }
-
         const updatedGym = await updateAfipConfigUseCase.execute({
-          gymId: user.gymId,
+          gymId: getTenantId(req),
           ...req.body,
         });
 

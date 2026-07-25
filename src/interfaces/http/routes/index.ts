@@ -4,6 +4,8 @@ import { gymRoutes, adminGymRoutes } from './gym.routes';
 import { onboardingRoutes } from './onboarding.routes';
 import { routineRoutes } from './routine.routes';
 import { createClientRoutes } from './client.routes';
+import { createInvoiceRoutes } from './invoice.routes';
+import { createAiUsageRoutes } from './aiUsage.routes';
 import { createDashboardRouter } from './dashboard.routes';
 import { createAdminUserRoutes } from './user.routes';
 import { authMiddleware } from '../middlewares/authMiddleware';
@@ -28,7 +30,10 @@ router.use('/admin/users', requireAdmin, createAdminUserRoutes());
 // Routes that need auth + tenant
 router.use('/gyms', tenantMiddleware, gymRoutes);
 router.use('/clients', tenantMiddleware, createClientRoutes());
+router.use('/invoices', tenantMiddleware, createInvoiceRoutes());
+router.use('/ai-usage', tenantMiddleware, createAiUsageRoutes());
 router.use('/routines', tenantMiddleware, routineRoutes);
-router.use('/dashboard', tenantMiddleware, createDashboardRouter());
+// El dashboard aplica tenantMiddleware por-ruta: /summary es cross-gym y no lleva.
+router.use('/dashboard', createDashboardRouter());
 
 export default router;

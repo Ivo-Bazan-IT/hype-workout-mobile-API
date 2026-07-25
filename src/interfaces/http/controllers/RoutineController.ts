@@ -4,8 +4,10 @@ import { IRoutineRepository } from '../../../domain/repositories/IRoutineReposit
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { IGymRepository, IGymSecretsRepository } from '../../../domain/repositories/IGymRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
 import { IWhatsappProviderFactory } from '../../../domain/services/IWhatsappProviderFactory';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
+import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class RoutineController {
   constructor(
@@ -21,17 +23,9 @@ export class RoutineController {
   async generate(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { clientId } = req.params;
-      const user = req.user;
+      const gymId = getTenantId(req);
 
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
-
-      const result = await this.generateRoutineUseCase.execute(clientId, user.gymId);
+      const result = await this.generateRoutineUseCase.execute(clientId, gymId);
 
       // 200 OK - procesamiento sincrónico
       res.status(200).json({
@@ -47,15 +41,11 @@ export class RoutineController {
   async get(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
+      const gymId = getTenantId(req);
 
-      const routine = await this.routineRepository.findById(id, user?.gymId || '');
+      const routine = await this.routineRepository.findById(id, gymId);
       if (!routine) {
-        res.status(404).json({
-          status: 'error',
-          message: 'Routine not found'
-        });
-        return;
+        throw new NotFoundError('Routine');
       }
 
       res.json({
@@ -70,21 +60,7 @@ export class RoutineController {
   async getByClient(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { clientId } = req.params;
-      const user = req.user;
-
-      // Resolver gymId igual que el resto de controllers (admin+query o gymId del token)
-      // y exigir su presencia: sin gymId no se puede aislar por tenant.
-      const gymId = user?.role === 'admin' && req.query.gymId
-        ? (req.query.gymId as string)
-        : user?.gymId;
-
-      if (!gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const routines = await this.routineRepository.findByClientId(clientId, gymId);
 
@@ -99,18 +75,10 @@ export class RoutineController {
 
   async getExpiring(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
+      const gymId = getTenantId(req);
       const days = parseInt(req.query.days as string) || 7;
 
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
-
-      const count = await this.routineRepository.countExpiringByDay(user.gymId, days);
+      const count = await this.routineRepository.countExpiringByDay(gymId, days);
 
       res.json({
         status: 'success',
@@ -127,15 +95,11 @@ export class RoutineController {
   async resend(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
+      const gymId = getTenantId(req);
 
-      const routine = await this.routineRepository.findById(id, user?.gymId || '');
+      const routine = await this.routineRepository.findById(id, gymId);
       if (!routine) {
-        res.status(404).json({
-          status: 'error',
-          message: 'Routine not found'
-        });
-        return;
+        throw new NotFoundError('Routine');
       }
 
       // Reenviar WhatsApp sincrónicamente

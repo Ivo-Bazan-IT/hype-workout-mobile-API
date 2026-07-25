@@ -19,7 +19,10 @@ const invoiceSchema = new Schema<InvoiceDbDocument>({
   gymId: { type: Schema.Types.ObjectId, ref: 'Gym', required: true },
   clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
   tipoComprobante: { type: String, required: true }, // Ej: "Factura C"
-  cae: { type: String, required: true },
+  // No es required: una factura en estado 'error' no tiene CAE, y Mongoose rechaza
+  // la cadena vacía en un campo required. Con `required` el registro del fallo de
+  // AFIP explotaba y se llevaba puesta la renovación entera del socio.
+  cae: { type: String, default: '' },
   fechaEmision: { type: Date, default: Date.now },
   monto: { type: Number, required: true },
   estado: { type: String, enum: ['emitida', 'anulada', 'error', 'pendiente'], default: 'pendiente' },

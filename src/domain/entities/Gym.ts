@@ -1,12 +1,34 @@
+/**
+ * Proveedores de IA soportados. `deepseek` usa una API compatible con OpenAI
+ * (mismo SDK, otro baseURL) y es el default por costo: es el que mantiene barato
+ * el mantenimiento al escalar la cantidad de rutinas generadas.
+ */
+export const AI_PROVIDERS = ['deepseek', 'openai', 'anthropic'] as const;
+
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
 export interface AiConfig {
-  provider: 'openai' | 'anthropic';
+  provider: AiProvider;
   promptTemplate: string;
   model?: string;
+  /**
+   * API key del proveedor de IA, propia del gym (BYOK), cifrada con AES-256-GCM.
+   * Cada tenant paga su propio consumo: sin esto todos los gyms compartían la key
+   * de la plataforma y uno solo podía agotarle la cuota al resto.
+   * NUNCA se expone por HTTP, ni siquiera cifrada.
+   */
+  encryptedApiKey?: string;
 }
 
 export interface WhatsappConfig {
   phoneNumberId: string;
   tokenSecretRef: string;
+  /**
+   * Access token de Meta Cloud API propio del gym, cifrado con AES-256-GCM.
+   * Va de la mano del `phoneNumberId`: el PDF tiene que salir del número del gym,
+   * no de un número compartido. NUNCA se expone por HTTP.
+   */
+  encryptedAccessToken?: string;
 }
 
 export interface PdfTemplate {
@@ -53,7 +75,7 @@ export class GymEntity implements Gym {
     public contactEmail: string,
     public contactPhone: string,
     public isActive: boolean = true,
-    public aiConfig: AiConfig = { provider: 'openai', promptTemplate: '' },
+    public aiConfig: AiConfig = { provider: 'deepseek', promptTemplate: '' },
     public whatsappConfig: WhatsappConfig = { phoneNumberId: '', tokenSecretRef: '' },
     public pdfTemplate: PdfTemplate = {},
     public googleFormConfig: GoogleFormConfig = {},

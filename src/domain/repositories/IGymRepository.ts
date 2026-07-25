@@ -1,4 +1,4 @@
-import { Gym } from '../entities/Gym';
+import { Gym, AiProvider } from '../entities/Gym';
 
 export interface IGymRepository {
   create(gym: Omit<Gym, 'id' | 'createdAt' | 'updatedAt'>): Promise<Gym>;
@@ -12,6 +12,6 @@ export interface IGymRepository {
 // Interface for secrets management - not stored in DB
 export interface IGymSecretsRepository {
   getWhatsappAccessToken(gymId: string): Promise<string | null>;
-  getAiApiKey(gymId: string, provider: 'openai' | 'anthropic'): Promise<string | null>;
+  getAiApiKey(gymId: string, provider: AiProvider): Promise<string | null>;
   getAfipApiKey(gymId: string): Promise<string | null>;
 }

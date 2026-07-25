@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
-import { IAIProvider } from '../../../domain/services/IAIProvider';
+import { IAIProvider, AiUsage } from '../../../domain/services/IAIProvider';
+
+const MODELO_POR_DEFECTO = 'gpt-4o-mini';
 
 export class OpenAIProvider implements IAIProvider {
   private client: OpenAI;
@@ -9,22 +11,19 @@ export class OpenAIProvider implements IAIProvider {
   }
 
   async generateRoutine(params: {
-    promptTemplate: string;
-    encuestaData: Record<string, any>;
-  }): Promise<{ contenidoGenerado: Record<string, any> }> {
-    const finalPrompt = params.promptTemplate.replace(
-      '{{respuestas_encuesta}}',
-      JSON.stringify(params.encuestaData, null, 2)
-    );
+    prompt: string;
+    model?: string;
+  }): Promise<{ contenidoGenerado: Record<string, any>; usage?: AiUsage }> {
+    const model = params.model || MODELO_POR_DEFECTO;
 
     const response = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model,
       messages: [
         {
           role: 'system',
           content: 'Devolvé únicamente un JSON válido con la estructura de rutina solicitada, sin texto adicional.'
         },
-        { role: 'user', content: finalPrompt }
+        { role: 'user', content: params.prompt }
       ],
       response_format: { type: 'json_object' },
     });
@@ -32,6 +31,15 @@ export class OpenAIProvider implements IAIProvider {
     const content = response.choices[0].message.content ?? '{}';
     const contenidoGenerado = JSON.parse(content);
 
-    return { contenidoGenerado };
+    const usage = response.usage
+      ? {
+          model: response.model || model,
+          tokensPrompt: response.usage.prompt_tokens,
+          tokensRespuesta: response.usage.completion_tokens,
+          tokensTotal: response.usage.total_tokens
+        }
+      : undefined;
+
+    return { contenidoGenerado, usage };
   }
 }

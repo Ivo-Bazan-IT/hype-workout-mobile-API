@@ -14,6 +14,11 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
+  // DeepSeek es el proveedor de IA por defecto (API compatible con OpenAI)
+  DEEPSEEK_API_KEY: z.string().optional(),
+  // Solo para apuntar a otro gateway compatible; el default vive en DeepSeekProvider
+  DEEPSEEK_BASE_URL: z.string().url().optional(),
+
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
 
@@ -46,8 +51,12 @@ export type EnvConfig = z.infer<typeof envSchema>;
 export const env = envSchema.parse(process.env);
 
 // Validaciones de configuración
-if (!env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) {
+if (!env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) {
   console.warn('⚠️  Warning: No AI provider API keys configured. IA features will not work.');
+}
+
+if (!env.DEEPSEEK_API_KEY) {
+  console.warn('⚠️  Warning: DEEPSEEK_API_KEY no está definida y deepseek es el proveedor por defecto de los gyms nuevos.');
 }
 
 if (!env.APP_MASTER_KEY) {

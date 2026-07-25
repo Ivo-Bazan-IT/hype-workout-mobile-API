@@ -4,8 +4,11 @@ import { SearchClientsUseCase } from '../../../application/use-cases/client/Sear
 import { UpdateClientUseCase } from '../../../application/use-cases/client/UpdateClientUseCase';
 import { DeleteClientUseCase } from '../../../application/use-cases/client/DeleteClientUseCase';
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
+import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
+import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class ClientController {
   constructor(
@@ -14,24 +17,17 @@ export class ClientController {
     private updateClientUseCase: UpdateClientUseCase,
     private deleteClientUseCase: DeleteClientUseCase,
     private renewClientUseCase: RenewClientUseCase,
+    private updateClientSurveyUseCase: UpdateClientSurveyUseCase,
     private clientRepository: IClientRepository
   ) {}
 
   async create(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const result = await this.createClientUseCase.execute({
         ...req.body,
-        gymId: user.gymId
+        gymId
       });
 
       res.status(201).json({
@@ -45,19 +41,7 @@ export class ClientController {
 
   async list(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-
-      const gymId = user?.role === 'admin' && req.query.gymId
-        ? (req.query.gymId as string)
-        : user?.gymId;
-
-      if (!gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const filters = {
         query: req.query.query as string | undefined,
@@ -85,19 +69,7 @@ export class ClientController {
 
   async search(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-
-      const gymId = user?.role === 'admin' && req.query.gymId
-        ? (req.query.gymId as string)
-        : user?.gymId;
-
-      if (!gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const filters = {
         query: req.query.q as string | undefined,
@@ -126,28 +98,12 @@ export class ClientController {
   async get(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
-
-      const gymId = user?.role === 'admin' && req.query.gymId
-        ? (req.query.gymId as string)
-        : user?.gymId;
-
-      if (!gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const client = await this.clientRepository.findById(id, gymId);
 
       if (!client) {
-        res.status(404).json({
-          status: 'error',
-          message: 'Client not found'
-        });
-        return;
+        throw new NotFoundError('Client');
       }
 
       res.json({
@@ -162,19 +118,11 @@ export class ClientController {
   async update(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
-
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const result = await this.updateClientUseCase.execute({
         clientId: id,
-        gymId: user.gymId,
+        gymId,
         data: req.body
       });
 
@@ -190,19 +138,11 @@ export class ClientController {
   async delete(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
-
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       await this.deleteClientUseCase.execute({
         clientId: id,
-        gymId: user.gymId
+        gymId
       });
 
       res.json({
@@ -214,19 +154,31 @@ export class ClientController {
     }
   }
 
+  async updateSurvey(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      const result = await this.updateClientSurveyUseCase.execute({
+        clientId: id,
+        gymId,
+        ...req.body
+      });
+
+      res.json({
+        status: 'success',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async renew(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const user = req.user;
+      const gymId = getTenantId(req);
       const { monto } = req.body;
-
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
 
       // Calcular nueva fecha de vencimiento (30 días por defecto)
       const nuevaFechaVencimiento = new Date();
@@ -234,7 +186,7 @@ export class ClientController {
 
       const result = await this.renewClientUseCase.execute({
         clientId: id,
-        gymId: user.gymId,
+        gymId,
         monto,
         nuevaFechaVencimiento
       });
@@ -250,18 +202,10 @@ export class ClientController {
 
   async getExpiring(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
+      const gymId = getTenantId(req);
       const days = parseInt(req.query.days as string) || 7;
 
-      if (!user?.gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
-
-      const clients = await this.clientRepository.getExpiringSoon(user.gymId, days);
+      const clients = await this.clientRepository.getExpiringSoon(gymId, days);
 
       res.json({
         status: 'success',

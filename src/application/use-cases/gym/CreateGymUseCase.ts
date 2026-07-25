@@ -1,5 +1,6 @@
 import { IGymRepository } from '../../../domain/repositories/IGymRepository';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
+import { AiProvider } from '../../../domain/entities/Gym';
 import bcrypt from 'bcrypt';
 
 interface CreateGymDTO {
@@ -11,7 +12,7 @@ interface CreateGymDTO {
   adminEmail: string;
   adminPassword: string;
   adminName: string;
-  aiProvider?: 'openai' | 'anthropic';
+  aiProvider?: AiProvider;
   whatsappPhoneNumberId?: string;
 }
 
@@ -45,7 +46,8 @@ export class CreateGymUseCase {
       contactPhone: dto.contactPhone,
       isActive: true,
       aiConfig: {
-        provider: dto.aiProvider || 'openai',
+        // deepseek por defecto: es el más barato por rutina generada
+        provider: dto.aiProvider || 'deepseek',
         promptTemplate: '{{respuestas_encuesta}}',
       },
       whatsappConfig: {

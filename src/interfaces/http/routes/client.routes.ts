@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { MongoClientRepository } from '../../../infrastructure/database/mongoose/repositories/MongoClientRepository';
-import { MongoGymRepository, EnvGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
+import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
+import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
+import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
 import { AfipSdkAdapterFactory } from '../../../infrastructure/external/billing/AfipSdkAdapterFactory';
 import { CreateClientUseCase } from '../../../application/use-cases/client/CreateClientUseCase';
@@ -8,8 +10,9 @@ import { SearchClientsUseCase } from '../../../application/use-cases/client/Sear
 import { UpdateClientUseCase } from '../../../application/use-cases/client/UpdateClientUseCase';
 import { DeleteClientUseCase } from '../../../application/use-cases/client/DeleteClientUseCase';
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
+import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
 import { ClientController } from '../controllers/ClientController';
-import { createClientSchema, updateClientSchema } from '../validators/client.validator';
+import { createClientSchema, updateClientSchema, updateClientSurveySchema } from '../validators/client.validator';
 import { renewClientSchema } from '../validators/client.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
@@ -43,7 +46,7 @@ export const createClientRoutes = () => {
 
   const clientRepository = new MongoClientRepository();
   const gymRepository = new MongoGymRepository();
-  const gymSecretsRepo = new EnvGymSecretsRepository();
+  const gymSecretsRepo = new MongoGymSecretsRepository(new EncryptionService());
   const invoiceRepository = new MongoInvoiceRepository();
   const invoiceProviderFactory = new AfipSdkAdapterFactory();
 
@@ -59,12 +62,15 @@ export const createClientRoutes = () => {
     invoiceProviderFactory
   );
 
+  const updateClientSurveyUseCase = new UpdateClientSurveyUseCase(clientRepository);
+
   const clientController = new ClientController(
     createClientUseCase,
     searchClientsUseCase,
     updateClientUseCase,
     deleteClientUseCase,
     renewClientUseCase,
+    updateClientSurveyUseCase,
     clientRepository
   );
 
@@ -101,6 +107,11 @@ export const createClientRoutes = () => {
   // PUT /api/clients/:id - Actualizar cliente
   router.put('/:id', validateBody(updateClientSchema), (req, res, next) =>
     clientController.update(req as AuthenticatedRequest, res, next)
+  );
+
+  // PATCH /api/clients/:id/encuesta - Completar la encuesta (fusiona, no reemplaza)
+  router.patch('/:id/encuesta', validateBody(updateClientSurveySchema), (req, res, next) =>
+    clientController.updateSurvey(req as AuthenticatedRequest, res, next)
   );
 
   // DELETE /api/clients/:id - Eliminar cliente (soft delete)

@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { RoutineController } from '../controllers/RoutineController';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
-import { MongoGymRepository, EnvGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
+import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
+import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
+import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { MongoClientRepository } from '../../../infrastructure/database/mongoose/repositories/MongoClientRepository';
 import { MongoRoutineRepository } from '../../../infrastructure/database/mongoose/repositories/MongoRoutineRepository';
+import { MongoAiUsageRepository } from '../../../infrastructure/database/mongoose/repositories/MongoAiUsageRepository';
 import { AIProviderFactory } from '../../../infrastructure/external/ai/AIProviderFactory';
 import { PuppeteerPdfGenerator } from '../../../infrastructure/external/pdf/PdfGenerator';
 import { MetaCloudApiProviderFactory } from '../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory';
@@ -16,11 +19,12 @@ const createRoutineRouter = () => {
   const routineRepository = new MongoRoutineRepository();
   const clientRepository = new MongoClientRepository();
   const gymRepository = new MongoGymRepository();
-  const gymSecretsRepo = new EnvGymSecretsRepository();
+  const gymSecretsRepo = new MongoGymSecretsRepository(new EncryptionService());
   const aiProviderFactory = new AIProviderFactory();
   const pdfGenerator = new PuppeteerPdfGenerator();
   const whatsappProviderFactory = new MetaCloudApiProviderFactory();
   const fileStorage = new LocalFileStorage();
+  const aiUsageRepository = new MongoAiUsageRepository();
 
   // Caso de uso: recibe solo puertos
   const generateRoutineUseCase = new GenerateRoutineUseCase(
@@ -31,7 +35,8 @@ const createRoutineRouter = () => {
     aiProviderFactory,
     pdfGenerator,
     whatsappProviderFactory,
-    fileStorage
+    fileStorage,
+    aiUsageRepository
   );
 
   const routineController = new RoutineController(

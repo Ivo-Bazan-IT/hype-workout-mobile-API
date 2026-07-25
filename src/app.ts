@@ -4,8 +4,8 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'body-parser';
 import { env } from './config/env';
-import { AppError } from './shared/errors/AppError';
 import routes from './interfaces/http/routes';
+import { errorHandler } from './interfaces/http/middlewares/errorHandler';
 
 export const createApp = async (): Promise<Application> => {
   const app = express();
@@ -30,21 +30,9 @@ export const createApp = async (): Promise<Application> => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Error handling middleware
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (err instanceof AppError) {
-      return res.status(err.statusCode).json({
-        status: 'error',
-        message: err.message,
-      });
-    }
-
-    console.error('Unexpected error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-    });
-  });
+  // Error handling middleware. Se usa el handler compartido (que además traduce
+  // ZodError a 400) en vez de duplicar la lógica acá.
+  app.use(errorHandler);
 
   return app;
 };

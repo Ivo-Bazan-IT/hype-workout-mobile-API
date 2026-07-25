@@ -5,6 +5,8 @@ import { MongoClientRepository } from '../../../infrastructure/database/mongoose
 import { MongoRoutineRepository } from '../../../infrastructure/database/mongoose/repositories/MongoRoutineRepository';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { tenantMiddleware } from '../middlewares/tenantMiddleware';
+import { requireAdmin } from '../middlewares/roleMiddleware';
 
 export const createDashboardRouter = () => {
   const router = Router();
@@ -22,12 +24,14 @@ export const createDashboardRouter = () => {
   const dashboardController = new DashboardController(getGymDashboardUseCase);
 
   // GET /api/dashboard - Métricas del gym logueado (o gym específico para admin)
-  router.get('/', (req, res, next) =>
+  router.get('/', tenantMiddleware, (req, res, next) =>
     dashboardController.get(req as AuthenticatedRequest, res, next)
   );
 
-  // GET /api/dashboard/summary - Solo admin - resumen de todos los gyms
-  router.get('/summary', (req, res, next) =>
+  // GET /api/dashboard/summary - Solo admin - resumen de todos los gyms.
+  // NO lleva tenantMiddleware a propósito: es el único endpoint deliberadamente
+  // cross-gym, así que exigirle un ?gymId= lo dejaría sin sentido.
+  router.get('/summary', requireAdmin, (req, res, next) =>
     dashboardController.getSummary(req as AuthenticatedRequest, res, next)
   );
 

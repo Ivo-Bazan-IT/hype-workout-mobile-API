@@ -5,6 +5,12 @@ import { IAIProviderFactory } from '../../../domain/services/IAIProviderFactory'
 import { IPdfGenerator } from '../../../domain/services/IPdfGenerator';
 import { IWhatsappProviderFactory } from '../../../domain/services/IWhatsappProviderFactory';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
+import { IAiUsageRepository } from '../../../domain/repositories/IAiUsageRepository';
+import { AiUsage } from '../../../domain/services/IAIProvider';
+import { renderPromptTemplate } from '../../../domain/prompt/promptTemplate';
+import { calcularCostoEstimado } from '../../../domain/ai/pricing';
+import { Client } from '../../../domain/entities/Client';
+import { Gym } from '../../../domain/entities/Gym';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 
 export class GenerateRoutineUseCase {
@@ -16,7 +22,8 @@ export class GenerateRoutineUseCase {
     private aiProviderFactory: IAIProviderFactory,
     private pdfGenerator: IPdfGenerator,
     private whatsappProviderFactory: IWhatsappProviderFactory,
-    private fileStorage: IFileStorage
+    private fileStorage: IFileStorage,
+    private aiUsageRepository: IAiUsageRepository
   ) {}
 
   async execute(clientId: string, gymId: string): Promise<{ routineId: string }> {
@@ -49,27 +56,51 @@ export class GenerateRoutineUseCase {
     try {
       await this.routineRepository.updateStatus(routine.id, gymId, 'generando');
 
-      // 1. Obtener API key de IA
+      // 1. Obtener API key de IA (la propia del gym; ver MongoGymSecretsRepository)
       const aiApiKey = await this.gymSecretsRepo.getAiApiKey(gymId, gym.aiConfig.provider);
       if (!aiApiKey) {
-        throw new Error(`AI API key not configured for gym ${gymId}`);
+        // ValidationError y no Error genérico: es una configuración que le falta al
+        // gym, y merece un 400 accionable en vez de un 500 "Internal server error".
+        throw new ValidationError(
+          `No AI API key configured for provider "${gym.aiConfig.provider}". Add it in the gym settings.`
+        );
       }
 
-      // 2. Generar rutina con IA (proveedor por-gym vía factory)
-      const aiProvider = this.aiProviderFactory.create(gym.aiConfig.provider, aiApiKey);
-      const iaResult = await aiProvider.generateRoutine({
-        promptTemplate: gym.aiConfig.promptTemplate,
-        encuestaData: client.encuestaData
+      // 2. Renderizar el prompt del gym con los datos del cliente. El template lo
+      //    edita el dueño (PUT /api/gyms/settings/ai-prompt) para describir su
+      //    equipamiento, espacios y restricciones.
+      const prompt = renderPromptTemplate(gym.aiConfig.promptTemplate, {
+        encuestaData: client.encuestaData,
+        clienteNombre: client.nombre,
+        clienteDocumento: client.documento,
+        clienteEmail: client.email,
+        clienteTelefono: client.telefono,
+        clienteFechaInicio: client.fechaInicio,
+        clienteFechaVencimiento: client.fechaVencimiento,
+        gymNombre: gym.name
       });
 
-      // 3. Guardar contenido generado
+      // 3. Generar rutina con IA (proveedor y modelo por-gym vía factory)
+      const aiProvider = this.aiProviderFactory.create(gym.aiConfig.provider, aiApiKey);
+      const iaResult = await aiProvider.generateRoutine({
+        prompt,
+        model: gym.aiConfig.model
+      });
+
+      // 4. Guardar contenido generado. Se persiste el prompt YA renderizado: es lo
+      //    que realmente recibió el modelo, y sirve para auditar una rutina dudosa.
       await this.routineRepository.update(routine.id, gymId, {
         contenidoGenerado: iaResult.contenidoGenerado,
-        promptUsado: gym.aiConfig.promptTemplate,
+        promptUsado: prompt,
         fechaGeneracion: new Date()
       });
 
-      // 4. Generar PDF y persistirlo vía el puerto de almacenamiento
+      // 4b. Registrar el consumo de IA de este gym. Va acá, apenas responde el
+      //     modelo: si se registrara al final, un fallo del PDF o de WhatsApp
+      //     perdería un gasto que el proveedor ya cobró.
+      await this.registrarConsumo(routine.id, client, gym, iaResult.usage);
+
+      // 5. Generar PDF y persistirlo vía el puerto de almacenamiento
       const pdfBuffer = await this.pdfGenerator.generateFromHtml({
         template: {
           htmlTemplate: `<html><body><h1>Rutina para {{clienteNombre}}</h1><div>{{rutina}}</div></body></html>`,
@@ -90,16 +121,20 @@ export class GenerateRoutineUseCase {
       // Actualizar rutina con la URL del PDF
       await this.routineRepository.update(routine.id, gymId, { pdfUrl });
 
-      // 5. Enviar WhatsApp (si está configurado) reutilizando el buffer ya generado
+      // 6. Enviar WhatsApp reutilizando el buffer ya generado. Requiere las tres
+      //    cosas: el número del gym, su token y el teléfono del cliente.
       const accessToken = await this.gymSecretsRepo.getWhatsappAccessToken(gymId);
-      if (accessToken && client.telefono) {
+      const phoneNumberId = gym.whatsappConfig?.phoneNumberId;
+      const puedeEnviar = Boolean(accessToken && phoneNumberId && client.telefono);
+
+      if (puedeEnviar) {
         const whatsappProvider = this.whatsappProviderFactory.create({
-          phoneNumberId: gym.whatsappConfig.phoneNumberId,
-          accessToken
+          phoneNumberId: phoneNumberId!,
+          accessToken: accessToken!
         });
 
         const result = await whatsappProvider.sendPdfDocument({
-          to: client.telefono,
+          to: client.telefono!,
           pdfBuffer,
           filename: `rutina-${client.nombre}.pdf`
         });
@@ -109,8 +144,15 @@ export class GenerateRoutineUseCase {
         });
       }
 
-      // Marcar como completado
-      await this.routineRepository.updateStatus(routine.id, gymId, 'generado', 'enviado');
+      // El estado de envío refleja lo que realmente pasó: marcar 'enviado' cuando el
+      // envío se salteó dejaba rutinas que nadie recibió figurando como entregadas,
+      // y no había forma de detectarlas para reenviarlas.
+      await this.routineRepository.updateStatus(
+        routine.id,
+        gymId,
+        'generado',
+        puedeEnviar ? 'enviado' : 'pendiente'
+      );
     } catch (error) {
       console.error('❌ Routine generation error:', error);
       await this.routineRepository.updateStatus(routine.id, gymId, 'error');
@@ -118,5 +160,46 @@ export class GenerateRoutineUseCase {
     }
 
     return { routineId: routine.id };
+  }
+
+  /**
+   * Persiste el consumo atribuido al gym.
+   *
+   * No es fatal: la rutina ya fue generada y el proveedor ya cobró, así que un
+   * fallo al guardar la medición se registra en el log pero no tira abajo una
+   * generación exitosa ni marca la rutina en error.
+   */
+  private async registrarConsumo(
+    routineId: string,
+    client: Client,
+    gym: Gym,
+    usage?: AiUsage
+  ): Promise<void> {
+    if (!usage) {
+      console.warn(
+        `⚠️  El proveedor ${gym.aiConfig.provider} no informó consumo para la rutina ${routineId}: queda sin medir.`
+      );
+      return;
+    }
+
+    try {
+      await this.aiUsageRepository.create({
+        gymId: client.gymId,
+        clientId: client.id,
+        routineId,
+        provider: gym.aiConfig.provider,
+        model: usage.model,
+        tokensPrompt: usage.tokensPrompt,
+        tokensRespuesta: usage.tokensRespuesta,
+        tokensTotal: usage.tokensTotal,
+        costoEstimado: calcularCostoEstimado(
+          usage.model,
+          usage.tokensPrompt,
+          usage.tokensRespuesta
+        )
+      });
+    } catch (error) {
+      console.error(`❌ No se pudo registrar el consumo de la rutina ${routineId}:`, error);
+    }
   }
 }

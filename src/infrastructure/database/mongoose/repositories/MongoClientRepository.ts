@@ -68,6 +68,7 @@ export class MongoClientRepository implements IClientRepository {
     const updateData: Partial<ClientDocument> = {};
 
     if (data.nombre !== undefined) updateData.nombre = data.nombre;
+    if (data.documento !== undefined) updateData.documento = data.documento;
     if (data.email !== undefined) updateData.email = data.email;
     if (data.telefono !== undefined) updateData.telefono = data.telefono;
     if (data.estado !== undefined) updateData.estado = data.estado;

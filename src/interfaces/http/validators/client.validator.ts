@@ -1,12 +1,15 @@
 import { z } from 'zod';
 
+// Alta mínima: solo nombre y documento son obligatorios. El resto se completa
+// después con PATCH /api/clients/:id/encuesta. Si no se envían fechas, el caso de
+// uso aplica el mismo default de 30 días que usa el onboarding por formulario.
 export const createClientSchema = z.object({
   nombre: z.string().min(1, 'Nombre es requerido'),
   documento: z.string().min(1, 'Documento es requerido'),
-  telefono: z.string().min(10, 'Teléfono debe tener al menos 10 dígitos'),
+  telefono: z.string().min(10, 'Teléfono debe tener al menos 10 dígitos').optional(),
   email: z.string().email('Email inválido').optional(),
-  fechaInicio: z.string().datetime('Fecha de inicio inválida'),
-  fechaVencimiento: z.string().datetime('Fecha de vencimiento inválida'),
+  fechaInicio: z.coerce.date({ invalid_type_error: 'Fecha de inicio inválida' }).optional(),
+  fechaVencimiento: z.coerce.date({ invalid_type_error: 'Fecha de vencimiento inválida' }).optional(),
   encuestaData: z.record(z.any()).optional(),
 });
 
@@ -16,8 +19,21 @@ export const updateClientSchema = z.object({
   telefono: z.string().min(10).optional(),
   email: z.string().email().optional(),
   estado: z.enum(['activo', 'inactivo', 'pendiente']).optional(),
-  fechaVencimiento: z.string().datetime().optional(),
+  fechaVencimiento: z.coerce.date().optional(),
   encuestaData: z.record(z.any()).optional(),
+});
+
+// PATCH de la encuesta: `encuestaData` es obligatorio (es el objeto de este endpoint)
+// y se FUSIONA con lo ya cargado. `telefono` y `email` son los datos de contacto que
+// típicamente llegan en la encuesta y viven como campos propios del cliente.
+export const updateClientSurveySchema = z.object({
+  telefono: z.string().min(10, 'Teléfono debe tener al menos 10 dígitos').optional(),
+  email: z.string().email('Email inválido').optional(),
+  encuestaData: z
+    .record(z.any())
+    .refine((data) => Object.keys(data).length > 0, {
+      message: 'encuestaData no puede estar vacío',
+    }),
 });
 
 export const searchClientsSchema = z.object({

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AI_PROVIDERS } from '../../../domain/entities/Gym';
 
 export const createGymSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -9,6 +10,10 @@ export const createGymSchema = z.object({
   adminEmail: z.string().email('Admin email required'),
   adminPassword: z.string().min(6, 'Password must be at least 6 characters'),
   adminName: z.string().min(1, 'Admin name required'),
+  // CreateGymUseCase ya los soporta; sin declararlos acá, validateBody los
+  // descartaba al reemplazar req.body con el resultado del parse.
+  aiProvider: z.enum(AI_PROVIDERS).optional(),
+  whatsappPhoneNumberId: z.string().min(1).optional(),
 });
 
 export const updateGymSchema = z.object({
@@ -18,7 +23,7 @@ export const updateGymSchema = z.object({
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().min(10).optional(),
   aiConfig: z.object({
-    provider: z.enum(['openai', 'anthropic']),
+    provider: z.enum(AI_PROVIDERS),
     promptTemplate: z.string(),
     model: z.string().optional(),
   }).optional(),
@@ -39,8 +44,19 @@ export const updateGymSchema = z.object({
 export const updateAiConfigSchema = z
   .object({
     promptTemplate: z.string().min(1, 'Prompt template is required').optional(),
-    provider: z.enum(['openai', 'anthropic']).optional(),
+    provider: z.enum(AI_PROVIDERS).optional(),
     model: z.string().min(1).optional(),
+    // API key propia del gym (BYOK). Se cifra en el caso de uso; jamás se devuelve.
+    apiKey: z.string().min(1, 'API key cannot be empty').optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
+
+export const updateWhatsappConfigSchema = z
+  .object({
+    phoneNumberId: z.string().min(1, 'Phone number ID cannot be empty').optional(),
+    accessToken: z.string().min(1, 'Access token cannot be empty').optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided',

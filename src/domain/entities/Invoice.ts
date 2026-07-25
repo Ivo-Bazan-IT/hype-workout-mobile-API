@@ -1,3 +1,5 @@
+import { Types } from 'mongoose';
+
 export type InvoiceStatus = 'emitida' | 'anulada' | 'error' | 'pendiente';
 
 export interface Invoice {
@@ -47,15 +49,19 @@ export class InvoiceMapper {
     );
   }
 
-  static toPersistence(entity: InvoiceEntity, gymId: string, clientId: string): any {
+  static toPersistence(entity: InvoiceEntity): any {
     return {
-      gymId: gymId,
-      clientId: clientId,
+      _id: entity.id,
+      gymId: new Types.ObjectId(entity.gymId),
+      clientId: new Types.ObjectId(entity.clientId),
       tipoComprobante: entity.tipoComprobante,
       cae: entity.cae,
       monto: entity.monto,
+      fechaEmision: entity.fechaEmision,
       estado: entity.estado,
-      errorLog: entity.errorLog
+      errorLog: entity.errorLog,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
     };
   }
 }

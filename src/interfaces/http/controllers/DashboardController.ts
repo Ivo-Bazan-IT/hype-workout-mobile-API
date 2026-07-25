@@ -1,25 +1,14 @@
 import { Response, NextFunction } from 'express';
 import { GetGymDashboardUseCase } from '../../../application/use-cases/dashboard/GetGymDashboardUseCase';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
 
 export class DashboardController {
   constructor(private getGymDashboardUseCase: GetGymDashboardUseCase) {}
 
   async get(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-
-      const gymId = user?.role === 'admin' && req.query.gymId
-        ? (req.query.gymId as string)
-        : user?.gymId;
-
-      if (!gymId) {
-        res.status(403).json({
-          status: 'error',
-          message: 'Gym access required'
-        });
-        return;
-      }
+      const gymId = getTenantId(req);
 
       const metrics = await this.getGymDashboardUseCase.execute(gymId);
 
@@ -32,18 +21,9 @@ export class DashboardController {
     }
   }
 
-  async getSummary(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  async getSummary(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const user = req.user;
-
-      // Solo admin puede ver resumen de todos los gyms
-      if (user?.role !== 'admin') {
-        res.status(403).json({
-          status: 'error',
-          message: 'Admin access required'
-        });
-        return;
-      }
+      // El rol ya lo garantiza `requireAdmin` en la ruta; no se re-chequea acá.
 
       // Placeholder - se implementaría agregación de todos los gyms
       res.json({

@@ -5,7 +5,7 @@ export interface ClientDocument {
   gymId: Types.ObjectId;
   nombre: string;
   documento: string;
-  telefono: string;
+  telefono?: string;
   email?: string;
   estado: 'activo' | 'inactivo' | 'pendiente';
   fechaInicio: Date;
@@ -21,7 +21,9 @@ const clientSchema = new Schema<ClientDocument>({
   gymId: { type: Schema.Types.ObjectId, ref: 'Gym', required: true },
   nombre: { type: String, required: true },
   documento: { type: String, required: true },
-  telefono: { type: String, required: true },
+  // Sin `required`: se completa con la encuesta. Mongoose además rechaza la cadena
+  // vacía en campos required, así que exigirlo rompería el alta mínima.
+  telefono: { type: String },
   email: { type: String },
   estado: { type: String, enum: ['activo', 'inactivo', 'pendiente'], default: 'pendiente' },
   fechaInicio: { type: Date, required: true },

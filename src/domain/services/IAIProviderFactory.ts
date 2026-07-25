@@ -1,4 +1,5 @@
 import { IAIProvider } from './IAIProvider';
+import { AiProvider } from '../entities/Gym';
 
 /**
  * Fábrica de proveedores de IA. Permite a los casos de uso obtener un IAIProvider
@@ -6,5 +7,5 @@ import { IAIProvider } from './IAIProvider';
  * infraestructura concreta ni conocer OpenAI/Anthropic.
  */
 export interface IAIProviderFactory {
-  create(provider: 'openai' | 'anthropic', apiKey: string): IAIProvider;
+  create(provider: AiProvider, apiKey: string): IAIProvider;
 }

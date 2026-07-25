@@ -35,7 +35,8 @@
     "mongoose": "^8.5.2",
     "openai": "^4.57.0",
     "pdf-lib": "^1.17.1",
-    "puppeteer": "^23.5.0"
+    "puppeteer": "^23.5.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
