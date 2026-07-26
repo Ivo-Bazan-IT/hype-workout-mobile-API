@@ -42,14 +42,22 @@ const buildMocks = (clientOverrides: Record<string, any> = {}) => {
         gymId: 'gym-1',
         nombre: 'Iván Bazán',
         telefono: '5491122334455',
-        fechaVencimiento: new Date('2026-08-01'),
+        // Construida en hora LOCAL a propósito: `new Date('2026-08-01')` es
+        // medianoche UTC y en Argentina (UTC-3) se formatea como 31/07, así que
+        // la aserción del PDF dependería de la zona horaria de quien corra el test
+        fechaVencimiento: new Date(2026, 7, 1),
         encuestaData,
         ...clientOverrides,
       }),
     } as any,
     gymRepository: { findById: vi.fn().mockResolvedValue(gym) } as any,
     gymSecretsRepo: {
-      getAiApiKey: vi.fn().mockResolvedValue('sk-test'),
+      resolveAiCredentials: vi.fn().mockResolvedValue({
+        provider: 'openai',
+        apiKey: 'sk-test',
+        model: 'gpt-4o',
+        fuente: 'gym',
+      }),
       // null => se saltea el envío por WhatsApp
       getWhatsappAccessToken: vi.fn().mockResolvedValue(null),
     } as any,
@@ -65,6 +73,13 @@ const buildMocks = (clientOverrides: Record<string, any> = {}) => {
     aiUsageRepository: {
       create: vi.fn().mockResolvedValue({ id: 'usage-1' }),
     } as any,
+    plantillaProvider: {
+      obtenerStandard: vi.fn().mockResolvedValue({
+        htmlTemplate: '<h1>{{clienteNombre}}</h1>{{rutina}}',
+        fondo: Buffer.from('%PDF-standard'),
+        fuente: 'standard',
+      }),
+    } as any,
   };
 };
 
@@ -78,7 +93,8 @@ const buildUseCase = (m: ReturnType<typeof buildMocks>) =>
     m.pdfGenerator,
     m.whatsappProviderFactory,
     m.fileStorage,
-    m.aiUsageRepository
+    m.aiUsageRepository,
+    m.plantillaProvider
   );
 
 describe('GenerateRoutineUseCase', () => {
@@ -170,6 +186,37 @@ describe('GenerateRoutineUseCase', () => {
     );
   });
 
+  it('genera el PDF con la plantilla standard estampada sobre su fondo', async () => {
+    const mocks = buildMocks();
+    const useCase = buildUseCase(mocks);
+
+    await useCase.execute('client-1', 'gym-1');
+
+    const [params] = mocks.pdfGenerator.generateFromHtml.mock.calls[0];
+    expect(params.template.htmlTemplate).toBe('<h1>{{clienteNombre}}</h1>{{rutina}}');
+    // El fondo viaja al generador: sin esto el arte del PDF se pierde
+    expect(params.fondo).toEqual(Buffer.from('%PDF-standard'));
+    // Fecha en formato es-AR, que es quien lee el PDF
+    expect(params.data.fechaVencimiento).toBe('01/08/2026');
+    expect(params.data.gymNombre).toBe('Hype Workout');
+  });
+
+  it('prefiere la plantilla propia del gym si cargó una', async () => {
+    const mocks = buildMocks();
+    mocks.gymRepository.findById.mockResolvedValue({
+      ...gym,
+      pdfTemplate: { htmlTemplate: '<article>propia {{rutina}}</article>' },
+    });
+    const useCase = buildUseCase(mocks);
+
+    await useCase.execute('client-1', 'gym-1');
+
+    const [params] = mocks.pdfGenerator.generateFromHtml.mock.calls[0];
+    expect(params.template.htmlTemplate).toBe('<article>propia {{rutina}}</article>');
+    // Sigue sobre el fondo standard: la subida de fondo propio no está implementada
+    expect(params.fondo).toEqual(Buffer.from('%PDF-standard'));
+  });
+
   it('registra el consumo de IA atribuido al gym, con costo estimado', async () => {
     const mocks = buildMocks();
     const useCase = buildUseCase(mocks);
@@ -185,6 +232,7 @@ describe('GenerateRoutineUseCase', () => {
       tokensPrompt: 1000,
       tokensRespuesta: 2000,
       tokensTotal: 3000,
+      fuenteCredencial: 'gym',
       // gpt-4o: 1000/1M * 2.5 + 2000/1M * 10 = 0.0025 + 0.02
       costoEstimado: 0.0225,
     });
@@ -240,9 +288,77 @@ describe('GenerateRoutineUseCase', () => {
     expect(mocks.aiUsageRepository.create).not.toHaveBeenCalled();
   });
 
-  it('rechaza con 400 accionable si el gym no tiene API key de IA', async () => {
+  it('le pide la credencial al resolver con el proveedor y modelo del gym', async () => {
     const mocks = buildMocks();
-    mocks.gymSecretsRepo.getAiApiKey.mockResolvedValue(null);
+    const useCase = buildUseCase(mocks);
+
+    await useCase.execute('client-1', 'gym-1');
+
+    expect(mocks.gymSecretsRepo.resolveAiCredentials).toHaveBeenCalledWith(
+      'gym-1',
+      'openai',
+      'gpt-4o'
+    );
+    // Y usa lo que el resolver devolvió, no lo que dice aiConfig
+    expect(mocks.aiProviderFactory.create).toHaveBeenCalledWith('openai', 'sk-test');
+  });
+
+  it('genera con el proveedor de respaldo cuando el gym no tiene key propia', async () => {
+    const mocks = buildMocks();
+    mocks.gymSecretsRepo.resolveAiCredentials.mockResolvedValue({
+      provider: 'deepseek',
+      apiKey: 'sk-plataforma',
+      model: undefined,
+      fuente: 'respaldo',
+    });
+    const useCase = buildUseCase(mocks);
+
+    const result = await useCase.execute('client-1', 'gym-1');
+
+    // La rutina se genera igual: perder la funcionalidad era el problema a resolver
+    expect(mocks.aiProviderFactory.create).toHaveBeenCalledWith('deepseek', 'sk-plataforma');
+    // Sin modelo: `gpt-4o` (el del gym) contra DeepSeek falla
+    expect(mocks.generateRoutine.mock.calls[0][0].model).toBeUndefined();
+    expect(result.routineId).toBe('routine-1');
+    // La degradación viaja al caller para que el dueño pueda enterarse
+    expect(result.fuenteCredencial).toBe('respaldo');
+  });
+
+  it('atribuye el consumo al proveedor realmente usado, no al configurado', async () => {
+    const mocks = buildMocks();
+    mocks.gymSecretsRepo.resolveAiCredentials.mockResolvedValue({
+      provider: 'deepseek',
+      apiKey: 'sk-plataforma',
+      model: undefined,
+      fuente: 'respaldo',
+    });
+    mocks.generateRoutine.mockResolvedValue({
+      contenidoGenerado: '## Rutina',
+      usage: {
+        model: 'deepseek-chat',
+        tokensPrompt: 1000,
+        tokensRespuesta: 2000,
+        tokensTotal: 3000,
+      },
+    });
+    const useCase = buildUseCase(mocks);
+
+    await useCase.execute('client-1', 'gym-1');
+
+    const [registro] = mocks.aiUsageRepository.create.mock.calls[0];
+    // El gym tiene aiConfig.provider = 'openai', pero generó DeepSeek: cargarle los
+    // tokens a OpenAI sumaría consumo a una cuenta que nunca se llamó
+    expect(registro.provider).toBe('deepseek');
+    expect(registro.model).toBe('deepseek-chat');
+    // Y queda registrado que lo pagó la plataforma, no el gym
+    expect(registro.fuenteCredencial).toBe('respaldo');
+    // deepseek-chat: 1000/1M * 0.27 + 2000/1M * 1.1 = 0.00027 + 0.0022
+    expect(registro.costoEstimado).toBe(0.00247);
+  });
+
+  it('rechaza con 400 accionable si no hay ninguna credencial utilizable', async () => {
+    const mocks = buildMocks();
+    mocks.gymSecretsRepo.resolveAiCredentials.mockResolvedValue(null);
     const useCase = buildUseCase(mocks);
 
     await expect(useCase.execute('client-1', 'gym-1')).rejects.toThrow(

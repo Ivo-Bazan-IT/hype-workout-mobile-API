@@ -27,10 +27,15 @@ export class RoutineController {
 
       const result = await this.generateRoutineUseCase.execute(clientId, gymId);
 
-      // 200 OK - procesamiento sincrónico
+      // 200 OK - procesamiento sincrónico. `fuenteCredencial` viaja en la respuesta
+      // para que el frontend distinga una rutina generada con el modelo que el gym
+      // configuró de una que salió por el respaldo de la plataforma.
       res.status(200).json({
         status: 'success',
-        message: 'Routine generated successfully',
+        message:
+          result.fuenteCredencial === 'respaldo'
+            ? 'Routine generated with the platform fallback AI provider'
+            : 'Routine generated successfully',
         data: result
       });
     } catch (error) {

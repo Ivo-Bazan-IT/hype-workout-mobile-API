@@ -18,6 +18,8 @@ const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().optional(),
   // Solo para apuntar a otro gateway compatible; el default vive en DeepSeekProvider
   DEEPSEEK_BASE_URL: z.string().url().optional(),
+  // Va DE LA MANO de DEEPSEEK_BASE_URL: cada gateway nombra los modelos a su manera
+  DEEPSEEK_DEFAULT_MODEL: z.string().optional(),
 
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -57,6 +59,16 @@ if (!env.DEEPSEEK_API_KEY && !env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) {
 
 if (!env.DEEPSEEK_API_KEY) {
   console.warn('⚠️  Warning: DEEPSEEK_API_KEY no está definida y deepseek es el proveedor por defecto de los gyms nuevos.');
+}
+
+// Apuntar a otro gateway sin fijar el modelo deja el default (`deepseek-chat`)
+// hablándole a un host que lo nombra distinto: falla con 400 recién al generar
+// una rutina, no al arrancar. Mejor avisarlo acá.
+if (env.DEEPSEEK_BASE_URL && !env.DEEPSEEK_DEFAULT_MODEL) {
+  console.warn(
+    '⚠️  Warning: DEEPSEEK_BASE_URL apunta a un gateway alternativo pero DEEPSEEK_DEFAULT_MODEL no está definida. ' +
+      'El modelo por defecto seguirá siendo "deepseek-chat", que probablemente ese gateway no reconozca.'
+  );
 }
 
 if (!env.APP_MASTER_KEY) {

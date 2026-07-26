@@ -31,7 +31,9 @@ export class MongoGymRepository implements IGymRepository {
   }
 
   async findAll(): Promise<Gym[]> {
-    const docs = await GymModel.find({ isActive: true });
+    // Incluye los desactivados: el panel de super-admin es el único consumidor y
+    // necesita verlos para poder reactivarlos. Van al final del listado.
+    const docs = await GymModel.find().sort({ isActive: -1, name: 1 });
     return docs.map(GymMapper.toDomain);
   }
 

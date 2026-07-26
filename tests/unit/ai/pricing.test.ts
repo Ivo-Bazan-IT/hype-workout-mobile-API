@@ -36,11 +36,30 @@ describe('pricing', () => {
     expect(tienePrecio('claude-3-7-sonnet-20250219')).toBe(true);
   });
 
-  it('todos los precios cargados son positivos', () => {
+  it('solo los modelos de capa gratuita pueden costar cero', () => {
+    // La protección original era "todo precio es positivo", para que un modelo
+    // pago cargado en 0 no subfacturara en silencio. Sigue valiendo: lo único que
+    // cambió es que un modelo `:free` SÍ puede valer 0, porque de verdad vale 0.
     for (const [model, precio] of Object.entries(PRECIOS_USD_POR_MILLON)) {
-      expect(precio.entrada, `${model} entrada`).toBeGreaterThan(0);
-      expect(precio.salida, `${model} salida`).toBeGreaterThan(0);
+      const esGratuito = model.endsWith(':free');
+
+      if (esGratuito) {
+        expect(precio.entrada, `${model} entrada`).toBe(0);
+        expect(precio.salida, `${model} salida`).toBe(0);
+      } else {
+        expect(precio.entrada, `${model} entrada`).toBeGreaterThan(0);
+        expect(precio.salida, `${model} salida`).toBeGreaterThan(0);
+      }
     }
+  });
+
+  it('un modelo gratuito cuesta 0, no null', () => {
+    // 0 es el precio REAL. Dejarlo fuera de la tabla lo contaría como "sin precio"
+    // en rutinasSinPrecio, que significa otra cosa: "no sé cuánto costó".
+    const modeloGratuito = 'nvidia/nemotron-3-super-120b-a12b:free';
+
+    expect(tienePrecio(modeloGratuito)).toBe(true);
+    expect(calcularCostoEstimado(modeloGratuito, 100_000, 200_000)).toBe(0);
   });
 
   it('un consumo de cero tokens cuesta cero', () => {

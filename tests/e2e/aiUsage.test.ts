@@ -43,6 +43,7 @@ describe('Consumo de IA por gym (e2e)', () => {
       tokensRespuesta: 2000,
       tokensTotal: 3000,
       costoEstimado: 0.01,
+      fuenteCredencial: 'gym' as const,
       ...overrides,
     });
 

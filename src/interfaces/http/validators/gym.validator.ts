@@ -22,6 +22,9 @@ export const updateGymSchema = z.object({
   cuit: z.string().min(11).optional(),
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().min(10).optional(),
+  // Reactivar es el inverso del soft delete de `DELETE /admin/gyms/:id`: sin este
+  // campo el `validateBody` lo descartaba y el gym quedaba inactivo para siempre.
+  isActive: z.boolean().optional(),
   aiConfig: z.object({
     provider: z.enum(AI_PROVIDERS),
     promptTemplate: z.string(),
@@ -32,8 +35,9 @@ export const updateGymSchema = z.object({
     tokenSecretRef: z.string(),
   }).optional(),
   pdfTemplate: z.object({
+    htmlTemplate: z.string().optional(),
+    cssStyles: z.string().optional(),
     storagePath: z.string().optional(),
-    fieldsMap: z.record(z.any()).optional(),
   }).optional(),
   googleFormConfig: z.object({
     formId: z.string().optional(),

@@ -11,6 +11,7 @@ export interface AiUsageDbDocument {
   tokensRespuesta: number;
   tokensTotal: number;
   costoEstimado?: number | null;
+  fuenteCredencial?: 'gym' | 'plataforma' | 'respaldo' | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +28,13 @@ const aiUsageSchema = new Schema<AiUsageDbDocument>(
     tokensTotal: { type: Number, default: 0 },
     // null = el modelo no tiene precio cargado. Distinto de 0 ("salió gratis").
     costoEstimado: { type: Number, default: null },
+    // Quién pagó este consumo. `null` en los registros previos a medirlo; el null
+    // va en el enum para que esos documentos sigan validando.
+    fuenteCredencial: {
+      type: String,
+      enum: ['gym', 'plataforma', 'respaldo', null],
+      default: null,
+    },
   },
   { timestamps: true }
 );

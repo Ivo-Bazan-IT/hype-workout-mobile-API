@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { IAIProvider, AiUsage } from '../../../domain/services/IAIProvider';
+import { INSTRUCCION_FORMATO_RUTINA } from '../../../domain/prompt/promptStandard';
 
 /**
  * Adaptador de DeepSeek.
@@ -17,24 +18,34 @@ const MODELO_POR_DEFECTO = 'deepseek-chat';
 
 export class DeepSeekProvider implements IAIProvider {
   private client: OpenAI;
+  private readonly modeloPorDefecto: string;
 
-  constructor(apiKey: string, baseURL: string = process.env.DEEPSEEK_BASE_URL || BASE_URL_POR_DEFECTO) {
+  /**
+   * `baseURL` y `modeloPorDefecto` son un PAR: apuntar a otro gateway sin cambiar
+   * el modelo deja una config inconsistente. Con `DEEPSEEK_BASE_URL` en OpenRouter,
+   * por ejemplo, `deepseek-chat` a secas se rechaza con 400 porque ahí los IDs
+   * llevan namespace (`deepseek/deepseek-chat`). Por eso el modelo también sale de
+   * env y no queda clavado al host de DeepSeek.
+   */
+  constructor(
+    apiKey: string,
+    baseURL: string = process.env.DEEPSEEK_BASE_URL || BASE_URL_POR_DEFECTO,
+    modeloPorDefecto: string = process.env.DEEPSEEK_DEFAULT_MODEL || MODELO_POR_DEFECTO
+  ) {
     this.client = new OpenAI({ apiKey, baseURL });
+    this.modeloPorDefecto = modeloPorDefecto;
   }
 
   async generateRoutine(params: {
     prompt: string;
     model?: string;
   }): Promise<{ contenidoGenerado: Record<string, any>; usage?: AiUsage }> {
-    const model = params.model || MODELO_POR_DEFECTO;
+    const model = params.model || this.modeloPorDefecto;
 
     const response = await this.client.chat.completions.create({
       model,
       messages: [
-        {
-          role: 'system',
-          content: 'Devolvé únicamente un JSON válido con la estructura de rutina solicitada, sin texto adicional.'
-        },
+        { role: 'system', content: INSTRUCCION_FORMATO_RUTINA },
         { role: 'user', content: params.prompt }
       ],
       response_format: { type: 'json_object' },

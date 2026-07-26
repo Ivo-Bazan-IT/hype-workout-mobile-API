@@ -32,8 +32,23 @@ export interface WhatsappConfig {
 }
 
 export interface PdfTemplate {
+  /**
+   * HTML propio del gym para el PDF de la rutina. Si falta, se usa la plantilla
+   * standard de la plataforma. Se guarda como string en el documento (igual que
+   * `aiConfig.promptTemplate`) y está topeado en tamaño: las imágenes van por URL,
+   * no embebidas. Ver `domain/pdf/routineTemplate.ts`.
+   */
+  htmlTemplate?: string;
+  cssStyles?: string;
+  /**
+   * Ruta al PDF de fondo propio del gym.
+   *
+   * RESERVADO: la subida de archivos todavía NO está implementada, así que hoy
+   * siempre se estampa sobre el fondo standard. El campo y la lógica de resolución
+   * (`resolverPlantillaPdf`) ya lo contemplan para no tener que rehacerlas cuando
+   * se agregue el endpoint de subida.
+   */
   storagePath?: string;
-  fieldsMap?: Record<string, { x: number; y: number; page: number; fontSize: number }>;
 }
 
 export interface GoogleFormConfig {

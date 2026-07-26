@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { IAIProvider, AiUsage } from '../../../domain/services/IAIProvider';
+import { INSTRUCCION_FORMATO_RUTINA } from '../../../domain/prompt/promptStandard';
 
 const MODELO_POR_DEFECTO = 'gpt-4o-mini';
 
@@ -19,10 +20,7 @@ export class OpenAIProvider implements IAIProvider {
     const response = await this.client.chat.completions.create({
       model,
       messages: [
-        {
-          role: 'system',
-          content: 'Devolvé únicamente un JSON válido con la estructura de rutina solicitada, sin texto adicional.'
-        },
+        { role: 'system', content: INSTRUCCION_FORMATO_RUTINA },
         { role: 'user', content: params.prompt }
       ],
       response_format: { type: 'json_object' },

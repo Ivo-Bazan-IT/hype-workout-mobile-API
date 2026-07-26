@@ -9,6 +9,7 @@ import { MongoRoutineRepository } from '../../../infrastructure/database/mongoos
 import { MongoAiUsageRepository } from '../../../infrastructure/database/mongoose/repositories/MongoAiUsageRepository';
 import { AIProviderFactory } from '../../../infrastructure/external/ai/AIProviderFactory';
 import { PuppeteerPdfGenerator } from '../../../infrastructure/external/pdf/PdfGenerator';
+import { FilePlantillaRutinaProvider } from '../../../infrastructure/external/pdf/FilePlantillaRutinaProvider';
 import { MetaCloudApiProviderFactory } from '../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory';
 import { LocalFileStorage } from '../../../infrastructure/storage/LocalFileStorage';
 
@@ -25,6 +26,7 @@ const createRoutineRouter = () => {
   const whatsappProviderFactory = new MetaCloudApiProviderFactory();
   const fileStorage = new LocalFileStorage();
   const aiUsageRepository = new MongoAiUsageRepository();
+  const plantillaProvider = new FilePlantillaRutinaProvider();
 
   // Caso de uso: recibe solo puertos
   const generateRoutineUseCase = new GenerateRoutineUseCase(
@@ -36,7 +38,8 @@ const createRoutineRouter = () => {
     pdfGenerator,
     whatsappProviderFactory,
     fileStorage,
-    aiUsageRepository
+    aiUsageRepository,
+    plantillaProvider
   );
 
   const routineController = new RoutineController(

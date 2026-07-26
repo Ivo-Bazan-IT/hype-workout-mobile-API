@@ -11,6 +11,7 @@ import { MongoGymRepository } from '../../../infrastructure/database/mongoose/re
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { Gym } from '../../../domain/entities/Gym';
+import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
 import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema, updateWhatsappConfigSchema } from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
@@ -65,12 +66,20 @@ const createAdminGymRouter = () => {
  * devolver esos objetos enteros filtraría el ciphertext. Se exponen solo los campos
  * editables más un booleano que le dice al front si la credencial ya está cargada.
  */
-const toSafeAiConfig = (gym: Gym) => ({
-  provider: gym.aiConfig?.provider,
-  promptTemplate: gym.aiConfig?.promptTemplate,
-  model: gym.aiConfig?.model,
-  hasApiKey: Boolean(gym.aiConfig?.encryptedApiKey),
-});
+const toSafeAiConfig = (gym: Gym) => {
+  // Se devuelve el prompt EFECTIVO, no el campo crudo: si el gym nunca escribió el
+  // suyo, el front recibe el standard ya cargado para editar en vez de un textarea
+  // vacío, y `usaPromptStandard` le permite avisar que todavía no lo personalizó.
+  const prompt = resolverPromptTemplate(gym.aiConfig?.promptTemplate);
+
+  return {
+    provider: gym.aiConfig?.provider,
+    promptTemplate: prompt.template,
+    usaPromptStandard: prompt.fuente === 'standard',
+    model: gym.aiConfig?.model,
+    hasApiKey: Boolean(gym.aiConfig?.encryptedApiKey),
+  };
+};
 
 const toSafeWhatsappConfig = (gym: Gym) => ({
   phoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,

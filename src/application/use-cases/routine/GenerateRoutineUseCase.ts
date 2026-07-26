@@ -5,12 +5,15 @@ import { IAIProviderFactory } from '../../../domain/services/IAIProviderFactory'
 import { IPdfGenerator } from '../../../domain/services/IPdfGenerator';
 import { IWhatsappProviderFactory } from '../../../domain/services/IWhatsappProviderFactory';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
+import { IPlantillaRutinaProvider } from '../../../domain/services/IPlantillaRutinaProvider';
+import { resolverPlantillaPdf } from '../../../domain/pdf/routineTemplate';
 import { IAiUsageRepository } from '../../../domain/repositories/IAiUsageRepository';
 import { AiUsage } from '../../../domain/services/IAIProvider';
 import { renderPromptTemplate } from '../../../domain/prompt/promptTemplate';
+import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
 import { calcularCostoEstimado } from '../../../domain/ai/pricing';
+import { CredencialIAResuelta, FuenteCredencialIA } from '../../../domain/ai/credentials';
 import { Client } from '../../../domain/entities/Client';
-import { Gym } from '../../../domain/entities/Gym';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 
 export class GenerateRoutineUseCase {
@@ -23,10 +26,14 @@ export class GenerateRoutineUseCase {
     private pdfGenerator: IPdfGenerator,
     private whatsappProviderFactory: IWhatsappProviderFactory,
     private fileStorage: IFileStorage,
-    private aiUsageRepository: IAiUsageRepository
+    private aiUsageRepository: IAiUsageRepository,
+    private plantillaProvider: IPlantillaRutinaProvider
   ) {}
 
-  async execute(clientId: string, gymId: string): Promise<{ routineId: string }> {
+  async execute(
+    clientId: string,
+    gymId: string
+  ): Promise<{ routineId: string; fuenteCredencial: FuenteCredencialIA }> {
     // Verificar cliente existe y pertenece al gym
     const client = await this.clientRepository.findById(clientId, gymId);
     if (!client) {
@@ -56,9 +63,14 @@ export class GenerateRoutineUseCase {
     try {
       await this.routineRepository.updateStatus(routine.id, gymId, 'generando');
 
-      // 1. Obtener API key de IA (la propia del gym; ver MongoGymSecretsRepository)
-      const aiApiKey = await this.gymSecretsRepo.getAiApiKey(gymId, gym.aiConfig.provider);
-      if (!aiApiKey) {
+      // 1. Resolver la credencial de IA: la propia del gym, la de plataforma para
+      //    su proveedor, o el proveedor de respaldo. Ver domain/ai/credentials.
+      const credencial = await this.gymSecretsRepo.resolveAiCredentials(
+        gymId,
+        gym.aiConfig.provider,
+        gym.aiConfig.model
+      );
+      if (!credencial) {
         // ValidationError y no Error genérico: es una configuración que le falta al
         // gym, y merece un 400 accionable en vez de un 500 "Internal server error".
         throw new ValidationError(
@@ -66,10 +78,26 @@ export class GenerateRoutineUseCase {
         );
       }
 
-      // 2. Renderizar el prompt del gym con los datos del cliente. El template lo
-      //    edita el dueño (PUT /api/gyms/settings/ai-prompt) para describir su
-      //    equipamiento, espacios y restricciones.
-      const prompt = renderPromptTemplate(gym.aiConfig.promptTemplate, {
+      if (credencial.fuente === 'respaldo') {
+        // Warning y no silencio: la rutina se generó con un modelo que el dueño no
+        // eligió y cuyo consumo paga la plataforma. Que funcione no lo vuelve normal.
+        console.warn(
+          `⚠️  El gym ${gymId} no tiene API key para "${gym.aiConfig.provider}" ni la plataforma tampoco: ` +
+            `la rutina ${routine.id} se genera con el proveedor de respaldo "${credencial.provider}".`
+        );
+      }
+
+      // 2. Renderizar el prompt de CONTENIDO con los datos del cliente. Es el del
+      //    gym si escribió uno (PUT /api/gyms/settings/ai-prompt, donde describe su
+      //    equipamiento, espacios y restricciones) y el standard de la plataforma si
+      //    no. El FORMATO del JSON no sale de acá: lo fija la instrucción de sistema
+      //    en los adaptadores, para que el contrato con el PDF no dependa de lo que
+      //    cada gym haya escrito.
+      const { template: promptDeContenido } = resolverPromptTemplate(
+        gym.aiConfig.promptTemplate
+      );
+
+      const prompt = renderPromptTemplate(promptDeContenido, {
         encuestaData: client.encuestaData,
         clienteNombre: client.nombre,
         clienteDocumento: client.documento,
@@ -80,11 +108,11 @@ export class GenerateRoutineUseCase {
         gymNombre: gym.name
       });
 
-      // 3. Generar rutina con IA (proveedor y modelo por-gym vía factory)
-      const aiProvider = this.aiProviderFactory.create(gym.aiConfig.provider, aiApiKey);
+      // 3. Generar rutina con IA (proveedor y modelo ya resueltos vía factory)
+      const aiProvider = this.aiProviderFactory.create(credencial.provider, credencial.apiKey);
       const iaResult = await aiProvider.generateRoutine({
         prompt,
-        model: gym.aiConfig.model
+        model: credencial.model
       });
 
       // 4. Guardar contenido generado. Se persiste el prompt YA renderizado: es lo
@@ -98,19 +126,29 @@ export class GenerateRoutineUseCase {
       // 4b. Registrar el consumo de IA de este gym. Va acá, apenas responde el
       //     modelo: si se registrara al final, un fallo del PDF o de WhatsApp
       //     perdería un gasto que el proveedor ya cobró.
-      await this.registrarConsumo(routine.id, client, gym, iaResult.usage);
+      await this.registrarConsumo(routine.id, client, credencial, iaResult.usage);
 
-      // 5. Generar PDF y persistirlo vía el puerto de almacenamiento
+      // 5. Generar PDF y persistirlo vía el puerto de almacenamiento.
+      //    La plantilla es la propia del gym si cargó una, y si no la standard de
+      //    la plataforma; el HTML se estampa sobre el PDF de fondo.
+      const plantilla = resolverPlantillaPdf(
+        gym.pdfTemplate,
+        await this.plantillaProvider.obtenerStandard()
+      );
+
       const pdfBuffer = await this.pdfGenerator.generateFromHtml({
         template: {
-          htmlTemplate: `<html><body><h1>Rutina para {{clienteNombre}}</h1><div>{{rutina}}</div></body></html>`,
-          cssStyles: ''
+          htmlTemplate: plantilla.htmlTemplate,
+          cssStyles: plantilla.cssStyles
         },
         data: {
           clienteNombre: client.nombre,
-          fechaVencimiento: client.fechaVencimiento.toISOString(),
+          gymNombre: gym.name,
+          fechaGeneracion: this.formatearFecha(new Date()),
+          fechaVencimiento: this.formatearFecha(client.fechaVencimiento),
           rutina: iaResult.contenidoGenerado
-        }
+        },
+        fondo: plantilla.fondo
       });
 
       const { url: pdfUrl } = await this.fileStorage.save({
@@ -153,13 +191,27 @@ export class GenerateRoutineUseCase {
         'generado',
         puedeEnviar ? 'enviado' : 'pendiente'
       );
+
+      // Se devuelve la fuente para que el frontend pueda avisarle al dueño que la
+      // rutina salió con el modelo de respaldo y que cargue su propia API key.
+      return { routineId: routine.id, fuenteCredencial: credencial.fuente };
     } catch (error) {
       console.error('❌ Routine generation error:', error);
       await this.routineRepository.updateStatus(routine.id, gymId, 'error');
       throw error;
     }
+  }
 
-    return { routineId: routine.id };
+  /**
+   * Fecha para el PDF, en formato es-AR: lo lee un socio argentino, no una máquina.
+   * El ISO se reserva para los campos que consume el front.
+   */
+  private formatearFecha(fecha: Date): string {
+    return fecha.toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
   }
 
   /**
@@ -172,12 +224,12 @@ export class GenerateRoutineUseCase {
   private async registrarConsumo(
     routineId: string,
     client: Client,
-    gym: Gym,
+    credencial: CredencialIAResuelta,
     usage?: AiUsage
   ): Promise<void> {
     if (!usage) {
       console.warn(
-        `⚠️  El proveedor ${gym.aiConfig.provider} no informó consumo para la rutina ${routineId}: queda sin medir.`
+        `⚠️  El proveedor ${credencial.provider} no informó consumo para la rutina ${routineId}: queda sin medir.`
       );
       return;
     }
@@ -187,11 +239,15 @@ export class GenerateRoutineUseCase {
         gymId: client.gymId,
         clientId: client.id,
         routineId,
-        provider: gym.aiConfig.provider,
+        // El proveedor REALMENTE usado, no el configurado: si la generación
+        // degradó al respaldo, atribuirle los tokens al proveedor que el gym
+        // eligió cargaría consumo a una cuenta que nunca se llamó.
+        provider: credencial.provider,
         model: usage.model,
         tokensPrompt: usage.tokensPrompt,
         tokensRespuesta: usage.tokensRespuesta,
         tokensTotal: usage.tokensTotal,
+        fuenteCredencial: credencial.fuente,
         costoEstimado: calcularCostoEstimado(
           usage.model,
           usage.tokensPrompt,

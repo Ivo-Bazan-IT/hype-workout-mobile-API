@@ -2,6 +2,11 @@ import { GymModel } from '../schemas/GymSchema';
 import { IGymSecretsRepository } from '../../../../domain/repositories/IGymRepository';
 import { IEncryptionService } from '../../../../domain/services/IEncryptionService';
 import { AiProvider } from '../../../../domain/entities/Gym';
+import {
+  CredencialIAResuelta,
+  PROVEEDOR_DE_RESPALDO,
+  resolverCredencialIA,
+} from '../../../../domain/ai/credentials';
 
 /**
  * Secretos por-gym (BYOK) guardados cifrados con AES-256-GCM en la propia colección
@@ -16,6 +21,9 @@ import { AiProvider } from '../../../../domain/entities/Gym';
  *     se LANZA: caer al env silenciosamente haría que el gym consuma la cuota de la
  *     plataforma (o mande el PDF desde otro número) sin que nadie se entere.
  *  2. Si el gym no cargó ninguna, se usa la del entorno como fallback de plataforma.
+ *
+ * La credencial de IA agrega un tercer escalón (ver `resolveAiCredentials`), porque
+ * es la única donde la plataforma puede atender al gym con OTRO proveedor.
  */
 export class MongoGymSecretsRepository implements IGymSecretsRepository {
   constructor(private encryptionService: IEncryptionService) {}
@@ -31,15 +39,33 @@ export class MongoGymSecretsRepository implements IGymSecretsRepository {
     return process.env.WHATSAPP_DEFAULT_ACCESS_TOKEN || null;
   }
 
-  async getAiApiKey(gymId: string, provider: AiProvider): Promise<string | null> {
+  /**
+   * Además de los dos escalones de arriba (key del gym → key de plataforma del
+   * mismo proveedor), agrega un tercero: si tampoco hay key de plataforma para el
+   * proveedor que el gym eligió, se degrada al de respaldo en vez de dejarlo sin
+   * generar rutinas. La decisión de qué escalón corresponde vive en
+   * `domain/ai/credentials`; acá solo se juntan las keys disponibles.
+   */
+  async resolveAiCredentials(
+    gymId: string,
+    preferido: AiProvider,
+    modelPreferido?: string
+  ): Promise<CredencialIAResuelta | null> {
     const gym = await GymModel.findById(gymId);
 
+    // Si el gym cargó su key y no descifra, se sigue lanzando: degradar acá
+    // haría que consuma la cuota de la plataforma teniendo la suya, que es
+    // justamente lo que este repositorio vino a evitar.
     const encrypted = gym?.aiConfig?.encryptedApiKey;
-    if (encrypted) {
-      return this.decryptOrThrow(encrypted, gymId, 'AI API key');
-    }
+    const keyDelGym = encrypted
+      ? this.decryptOrThrow(encrypted, gymId, 'AI API key')
+      : null;
 
-    return this.platformAiApiKey(provider);
+    return resolverCredencialIA(preferido, modelPreferido, {
+      gym: keyDelGym,
+      plataforma: this.platformAiApiKey(preferido),
+      respaldo: this.platformAiApiKey(PROVEEDOR_DE_RESPALDO),
+    });
   }
 
   async getAfipApiKey(gymId: string): Promise<string | null> {

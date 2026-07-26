@@ -1,0 +1,197 @@
+<!--
+  PLANTILLA STANDARD DEL PDF DE RUTINA
+  ===================================================================
+  Se estampa SOBRE `rutina-standard.pdf` (el arte de fondo). Por eso:
+
+  1. NO pinta fondo propio. Cualquier `background` opaco en `body` o en un
+     contenedor a ancho completo taparía el diseño de abajo.
+  2. El margen del PDF lo define ESTA hoja, no Puppeteer (que renderiza con
+     margen 0). El "área segura" de abajo es la perilla a ajustar para que el
+     texto no pise el encabezado ni el pie del arte.
+  3. Las páginas que sobran (una rutina larga desborda) repiten la última
+     página del fondo, así que el área segura tiene que servir para todas.
+
+  Placeholders disponibles: {{clienteNombre}} {{gymNombre}} {{fechaGeneracion}}
+  {{fechaVencimiento}} {{rutina}}   —  ver src/domain/pdf/routineTemplate.ts
+-->
+<style>
+  /* ── ÁREA SEGURA: ajustar contra el arte de rutina-standard.pdf ──────────
+     Va en `@page` y NO como padding del body: el padding del body se aplica una
+     sola vez al flujo entero, así que la página 1 quedaba bien y de la 2 en
+     adelante el texto arrancaba en el borde, encima del encabezado del diseño.
+     `@page` se aplica hoja por hoja.
+
+     Los valores van LITERALES: las variables CSS no funcionan dentro de @page
+     (está fuera del árbol del documento y :root no cascadea hasta ahí).
+
+     Si el texto pisa el encabezado del arte, subir el primer valor (top). El
+     último (left) y el segundo (right) controlan los costados; el tercero
+     (bottom) el pie. */
+  @page {
+    /* El TAMAÑO no se declara acá: lo toma del PDF de fondo, así el contenido
+       calza con el arte aunque no sea A4. Acá solo van los márgenes. */
+    margin: 34mm 16mm 22mm 16mm;
+  }
+
+  :root {
+    --tinta: #1a1a1a;
+    --tinta-suave: #5c5c5c;
+    --linea: rgba(0, 0, 0, 0.14);
+    --acento: #111111;
+  }
+
+  html,
+  body {
+    margin: 0;
+    /* El espaciado lo da @page, para que se repita en todas las hojas */
+    padding: 0;
+    /* Sin background: el fondo lo pone el PDF de abajo */
+    background: transparent;
+  }
+
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: var(--tinta);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .encabezado {
+    border-bottom: 1.5pt solid var(--acento);
+    padding-bottom: 6pt;
+    margin-bottom: 14pt;
+  }
+
+  .encabezado h1 {
+    margin: 0 0 2pt;
+    font-size: 19pt;
+    line-height: 1.15;
+    letter-spacing: -0.4pt;
+  }
+
+  .encabezado .gimnasio {
+    margin: 0;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 1.2pt;
+    color: var(--tinta-suave);
+  }
+
+  .datos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4pt 26pt;
+    margin-bottom: 18pt;
+    font-size: 9pt;
+  }
+
+  .datos div {
+    display: flex;
+    gap: 5pt;
+  }
+
+  .datos .etiqueta {
+    color: var(--tinta-suave);
+    text-transform: uppercase;
+    letter-spacing: 0.7pt;
+  }
+
+  .datos .valor {
+    font-weight: 600;
+  }
+
+  /* ── Bloques que genera renderRoutineAsHtml ──────────────────────────── */
+  .dia {
+    margin-bottom: 16pt;
+    /* Un día no se parte al medio entre dos páginas */
+    page-break-inside: avoid;
+  }
+
+  .dia h3 {
+    margin: 0 0 6pt;
+    font-size: 11.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.8pt;
+    border-left: 3pt solid var(--acento);
+    padding-left: 7pt;
+  }
+
+  .dia table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .dia thead th {
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.8pt;
+    color: var(--tinta-suave);
+    text-align: left;
+    font-weight: 600;
+    padding: 0 6pt 3pt 0;
+    border-bottom: 0.5pt solid var(--linea);
+  }
+
+  .dia tbody td {
+    padding: 4.5pt 6pt 4.5pt 0;
+    border-bottom: 0.5pt solid var(--linea);
+    vertical-align: top;
+  }
+
+  .dia td.ejercicio {
+    font-weight: 600;
+    width: 46%;
+  }
+
+  .dia td.numero {
+    width: 13%;
+    white-space: nowrap;
+  }
+
+  .dia .nota {
+    display: block;
+    font-weight: 400;
+    font-size: 8.5pt;
+    color: var(--tinta-suave);
+  }
+
+  .dia .observacion {
+    margin: 5pt 0 0;
+    font-size: 8.5pt;
+    color: var(--tinta-suave);
+  }
+
+  /* Estructura inesperada de la IA: se vuelca crudo antes que perder el dato */
+  .rutina-cruda {
+    white-space: pre-wrap;
+    font-family: 'Courier New', monospace;
+    font-size: 8.5pt;
+  }
+
+  .vencimiento {
+    margin-top: 20pt;
+    padding-top: 6pt;
+    border-top: 0.5pt solid var(--linea);
+    font-size: 8.5pt;
+    color: var(--tinta-suave);
+  }
+</style>
+
+<div class="encabezado">
+  <p class="gimnasio">{{gymNombre}}</p>
+  <h1>Rutina de {{clienteNombre}}</h1>
+</div>
+
+<div class="datos">
+  <div><span class="etiqueta">Generada</span><span class="valor">{{fechaGeneracion}}</span></div>
+  <div><span class="etiqueta">Vence</span><span class="valor">{{fechaVencimiento}}</span></div>
+</div>
+
+{{rutina}}
+
+<p class="vencimiento">
+  Plan vigente hasta el {{fechaVencimiento}}. Consultá en {{gymNombre}} antes de esa fecha
+  para renovar y recibir tu próxima rutina.
+</p>

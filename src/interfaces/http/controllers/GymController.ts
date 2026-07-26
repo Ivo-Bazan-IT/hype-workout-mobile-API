@@ -51,6 +51,12 @@ export class GymController {
           cuit: gym.cuit,
           contactEmail: gym.contactEmail,
           contactPhone: gym.contactPhone,
+          isActive: gym.isActive,
+          // El dashboard de plataforma cuenta las altas del mes y ordena las
+          // últimas por fecha: sin `createdAt` en la proyección esas métricas
+          // daban 0 aunque el dato estuviera en la base.
+          createdAt: gym.createdAt,
+          updatedAt: gym.updatedAt,
         }))
       });
     } catch (error) {

@@ -22,7 +22,8 @@ export class MongoAiUsageRepository implements IAiUsageRepository {
       tokensPrompt: record.tokensPrompt,
       tokensRespuesta: record.tokensRespuesta,
       tokensTotal: record.tokensTotal,
-      costoEstimado: record.costoEstimado
+      costoEstimado: record.costoEstimado,
+      fuenteCredencial: record.fuenteCredencial
     });
 
     return AiUsageRecordMapper.toDomain(doc);

@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { AiProvider } from './Gym';
+import { FuenteCredencialIA } from '../ai/credentials';
 
 /**
  * Consumo de IA de una generación de rutina, atribuido a un gym.
@@ -21,6 +22,12 @@ export interface AiUsageRecord {
   tokensTotal: number;
   /** USD estimados. `null` si el modelo no tiene precio cargado en domain/ai/pricing */
   costoEstimado: number | null;
+  /**
+   * Con qué credencial se generó. Permite separar lo que paga el gym (`gym`) de
+   * lo que paga la plataforma (`plataforma`, `respaldo`) al tarifar.
+   * `null` en los registros anteriores a que se midiera esto.
+   */
+  fuenteCredencial: FuenteCredencialIA | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +44,7 @@ export class AiUsageRecordEntity implements AiUsageRecord {
     public tokensRespuesta: number = 0,
     public tokensTotal: number = 0,
     public costoEstimado: number | null = null,
+    public fuenteCredencial: FuenteCredencialIA | null = null,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -55,6 +63,7 @@ export class AiUsageRecordMapper {
       doc.tokensRespuesta,
       doc.tokensTotal,
       doc.costoEstimado ?? null,
+      doc.fuenteCredencial ?? null,
       doc.createdAt,
       doc.updatedAt
     );
@@ -72,6 +81,7 @@ export class AiUsageRecordMapper {
       tokensRespuesta: entity.tokensRespuesta,
       tokensTotal: entity.tokensTotal,
       costoEstimado: entity.costoEstimado,
+      fuenteCredencial: entity.fuenteCredencial,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -20,8 +20,9 @@ export interface GymDocument {
     encryptedAccessToken?: string; // AES-256-GCM encrypted (BYOK por gym)
   };
   pdfTemplate: {
+    htmlTemplate?: string;
+    cssStyles?: string;
     storagePath?: string;
-    fieldsMap?: Record<string, { x: number; y: number; page: number; fontSize: number }>;
   };
   googleFormConfig: {
     formId?: string;
@@ -62,8 +63,10 @@ const gymSchema = new Schema<GymDocument>({
   },
 
   pdfTemplate: {
+    htmlTemplate: { type: String },
+    cssStyles: { type: String },
+    // Reservado: sin endpoint de subida todavía, hoy siempre se usa el fondo standard
     storagePath: { type: String },
-    fieldsMap: { type: Schema.Types.Mixed },
   },
 
   googleFormConfig: {

@@ -19,6 +19,7 @@ const registrar = (overrides: Record<string, any> = {}) =>
     tokensRespuesta: 2000,
     tokensTotal: 3000,
     costoEstimado: 0.0025,
+    fuenteCredencial: 'gym' as const,
     ...overrides,
   });
 

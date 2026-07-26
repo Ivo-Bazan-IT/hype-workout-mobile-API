@@ -35,6 +35,11 @@ export const PRECIOS_USD_POR_MILLON: Record<string, ModelPricing> = {
   'gpt-4o': { entrada: 2.5, salida: 10 },
   // Anthropic
   'claude-3-7-sonnet-20250219': { entrada: 3, salida: 15 },
+  // Capa gratuita vía OpenRouter. El 0 acá es un precio REAL, no un "no sé":
+  // son modelos sin costo por token, y dejarlos fuera de la tabla los contaría
+  // como rutinas sin precio, que es otra cosa. Si dejan de ser gratuitos o se
+  // cambia de modelo, esta entrada hay que revisarla.
+  'nvidia/nemotron-3-super-120b-a12b:free': { entrada: 0, salida: 0 },
 };
 
 /** ¿Hay precio cargado para este modelo? */

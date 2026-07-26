@@ -18,7 +18,7 @@ describe('GetGymDashboardUseCase', () => {
     } as any;
 
     const mockRoutineRepo = {
-      countExpiringByDay: async (gymId: string, days: number) => days === 7 ? 5 : days === 5 ? 3 : 1
+      countExpiringByDay: async (_gymId: string, days: number) => days === 7 ? 5 : days === 5 ? 3 : 1
     } as any;
 
     const mockInvoiceRepo = {

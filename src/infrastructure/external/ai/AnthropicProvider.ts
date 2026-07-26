@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { IAIProvider, AiUsage } from '../../../domain/services/IAIProvider';
+import { INSTRUCCION_FORMATO_RUTINA } from '../../../domain/prompt/promptStandard';
 
 const MODELO_POR_DEFECTO = 'claude-3-7-sonnet-20250219';
 
@@ -19,7 +20,7 @@ export class AnthropicProvider implements IAIProvider {
     const response = await this.client.messages.create({
       model,
       max_tokens: 4000,
-      system: 'Devolvé únicamente un JSON válido con la estructura de rutina solicitada, sin texto adicional.',
+      system: INSTRUCCION_FORMATO_RUTINA,
       messages: [
         { role: 'user', content: params.prompt }
       ],

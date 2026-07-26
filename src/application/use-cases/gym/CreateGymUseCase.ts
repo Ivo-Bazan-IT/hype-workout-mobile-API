@@ -1,6 +1,7 @@
 import { IGymRepository } from '../../../domain/repositories/IGymRepository';
 import { IUserRepository } from '../../../domain/repositories/IUserRepository';
 import { AiProvider } from '../../../domain/entities/Gym';
+import { PROMPT_STANDARD } from '../../../domain/prompt/promptStandard';
 import bcrypt from 'bcrypt';
 
 interface CreateGymDTO {
@@ -48,7 +49,9 @@ export class CreateGymUseCase {
       aiConfig: {
         // deepseek por defecto: es el más barato por rutina generada
         provider: dto.aiProvider || 'deepseek',
-        promptTemplate: '{{respuestas_encuesta}}',
+        // El standard, no un volcado pelado de la encuesta: así el gym genera
+        // rutinas usables desde el alta, sin tener que configurar nada primero.
+        promptTemplate: PROMPT_STANDARD,
       },
       whatsappConfig: {
         phoneNumberId: dto.whatsappPhoneNumberId || '',
