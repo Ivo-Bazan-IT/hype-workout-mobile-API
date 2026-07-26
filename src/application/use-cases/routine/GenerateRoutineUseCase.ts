@@ -35,7 +35,11 @@ export class GenerateRoutineUseCase {
   async execute(
     clientId: string,
     gymId: string
-  ): Promise<{ routineId: string; fuenteCredencial: FuenteCredencialIA }> {
+  ): Promise<{
+    routineId: string;
+    fuenteCredencial: FuenteCredencialIA;
+    estadoEnvio: RoutineSendStatus;
+  }> {
     // Verificar cliente existe y pertenece al gym
     const client = await this.clientRepository.findById(clientId, gymId);
     if (!client) {
@@ -169,9 +173,14 @@ export class GenerateRoutineUseCase {
       // entregadas, y no había forma de detectarlas para reenviarlas.
       await this.routineRepository.updateStatus(routine.id, gymId, 'generado', estadoEnvio);
 
-      // Se devuelve la fuente para que el frontend pueda avisarle al dueño que la
-      // rutina salió con el modelo de respaldo y que cargue su propia API key.
-      return { routineId: routine.id, fuenteCredencial: credencial.fuente };
+      // Se devuelven la fuente y el estado de envío para que el llamador sepa qué
+      // pasó realmente sin tener que volver a pedir la rutina: si salió por el
+      // proveedor de respaldo, y si el socio efectivamente la recibió.
+      return {
+        routineId: routine.id,
+        fuenteCredencial: credencial.fuente,
+        estadoEnvio
+      };
     } catch (error) {
       console.error('❌ Routine generation error:', error);
       await this.routineRepository.updateStatus(routine.id, gymId, 'error');

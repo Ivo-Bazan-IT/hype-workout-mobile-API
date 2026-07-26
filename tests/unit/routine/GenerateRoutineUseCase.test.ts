@@ -181,6 +181,9 @@ describe('GenerateRoutineUseCase', () => {
     const result = await useCaseConMocks(mocks);
 
     expect(result.routineId).toBe('routine-1');
+    // El estado viaja en la respuesta: el front distingue "generada y enviada" de
+    // "generada sin enviar" sin tener que volver a pedir la rutina
+    expect(result.estadoEnvio).toBe('error');
     // 'generado' con envío en 'error': queda reintentable con POST /:id/resend
     expect(mocks.routineRepository.updateStatus).toHaveBeenLastCalledWith(
       'routine-1',
