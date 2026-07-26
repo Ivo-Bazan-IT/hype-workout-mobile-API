@@ -24,16 +24,28 @@ const createAdminGymRouter = () => {
   const gymRepository = new MongoGymRepository();
   const userRepository = new MongoUserRepository();
 
-  const createGymUseCase = new CreateGymUseCase(gymRepository, userRepository);
+  const encryptionService = new EncryptionService();
+
+  const createGymUseCase = new CreateGymUseCase(
+    gymRepository,
+    userRepository,
+    encryptionService
+  );
   const updateGymUseCase = new UpdateGymUseCase(gymRepository);
   const deleteGymUseCase = new DeleteGymUseCase(gymRepository);
   const listGymsUseCase = new ListGymsUseCase(gymRepository);
+  const updateWhatsappConfigUseCase = new UpdateWhatsappConfigUseCase(
+    gymRepository,
+    encryptionService
+  );
 
   const gymController = new GymController(
     createGymUseCase,
     updateGymUseCase,
     deleteGymUseCase,
-    listGymsUseCase
+    listGymsUseCase,
+    updateWhatsappConfigUseCase,
+    gymRepository
   );
 
   router.get('/', (_req, res, next) =>

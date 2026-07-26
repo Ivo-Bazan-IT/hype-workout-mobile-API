@@ -358,10 +358,14 @@ por otro usuario.
 | `adminName`             | string                                | sí        | mín. 1 carácter                                      |
 | `aiProvider`            | `deepseek` \| `openai` \| `anthropic` | no        | Proveedor de IA inicial (default `deepseek`)         |
 | `whatsappPhoneNumberId` | string                                | no        | Phone Number ID de Meta. Se puede dejar para después |
+| `whatsappAccessToken`   | string                                | no        | Token de Meta. Se **cifra** y nunca se devuelve      |
 
 Config por defecto del gym nuevo: `aiConfig.provider = 'deepseek'`,
-`aiConfig.promptTemplate = '{{respuestas_encuesta}}'`, `whatsappConfig.tokenSecretRef =
-'whatsapp-{cuit}'`. Se ajusta después desde `/api/gyms/settings/*`.
+`aiConfig.promptTemplate` = el **prompt standard** de la plataforma (§4.1),
+`whatsappConfig.tokenSecretRef = 'whatsapp-{cuit}'`.
+
+Con `whatsappPhoneNumberId` + `whatsappAccessToken` el gimnasio queda operativo en una sola
+llamada: puede generar rutinas y enviarlas sin ninguna configuración posterior.
 
 **Respuesta `201`**
 
@@ -384,8 +388,36 @@ Config por defecto del gym nuevo: `aiConfig.provider = 'deepseek'`,
 
 ### `GET /api/admin/gyms/:id`
 
-⚠️ **Placeholder.** Hoy devuelve `{ "id": "<id>" }` sin consultar la base.
-Para leer la configuración real de un gym, usar `GET /api/gyms/settings?gymId=<id>`.
+Detalle de un gimnasio para el panel de plataforma.
+
+**Necesita:** token de admin y un gym existente.
+
+Usa **allowlist**, igual que `GET /api/gyms/settings`: las credenciales viven cifradas
+dentro de `aiConfig`/`whatsappConfig`, así que devolver esos objetos enteros filtraría el
+ciphertext. En su lugar informa booleanos.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "66a0...",
+    "name": "Hype Workout",
+    "businessName": "Hype SRL",
+    "cuit": "30712345678",
+    "contactEmail": "info@hype.com",
+    "contactPhone": "5491122334455",
+    "isActive": true,
+    "aiConfig": { "provider": "deepseek", "model": "deepseek-chat", "hasApiKey": false },
+    "whatsappConfig": { "phoneNumberId": "1234567890", "hasAccessToken": true },
+    "googleFormConfig": { "formId": "1FAIpQL..." },
+    "afipConfig": { "puntoVenta": 1, "taxCondition": "MONOTRIBUTO", "isActive": true },
+    "createdAt": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+**Errores:** `404` gym inexistente.
 
 ### `PUT /api/admin/gyms/:id`
 
@@ -400,17 +432,24 @@ Actualiza un gym. Todos los campos son **opcionales**; se aplican solo los envia
 | `cuit`             | string | mín. 11                                                                 |
 | `contactEmail`     | string | email válido                                                            |
 | `contactPhone`     | string | mín. 10                                                                 |
-| `aiConfig`         | object | `{ provider, promptTemplate, model? }` — **reemplaza el objeto entero** |
-| `whatsappConfig`   | object | `{ phoneNumberId, tokenSecretRef }` — reemplaza el objeto entero        |
+| `whatsappPhoneNumberId` | string | Número de Meta del gym. Hace **merge**                              |
+| `whatsappAccessToken`   | string | Se **cifra** antes de persistir y nunca se devuelve                 |
 | `pdfTemplate`      | object | `{ htmlTemplate?, cssStyles?, storagePath? }` — ver 4.1.1               |
 | `googleFormConfig` | object | `{ formId?, webhookSecret? }`                                           |
 
-> ⚠️ **Cuidado con `aiConfig` y `whatsappConfig` acá:** reemplazan el objeto completo, y eso
-> **borra las credenciales cifradas del gym** (`encryptedApiKey`, `encryptedAccessToken`),
-> que no son parte del body. Para cambios parciales que las preserven, usar los endpoints
-> de `/api/gyms/settings/*`, que hacen merge.
+> **WhatsApp va por campos planos, no como objeto.** Aceptar `whatsappConfig` entero lo
+> reemplazaba completo y **borraba el `encryptedAccessToken`** del gimnasio, que no viaja
+> en el body por ser secreto: se corregía un teléfono y la credencial de Meta desaparecía
+> en silencio. Estos dos campos hacen merge y cifran. Omitir `whatsappAccessToken`
+> **conserva** el que ya estaba; mandar uno nuevo lo reemplaza.
+>
+> `aiConfig` se quitó de este endpoint por la misma razón. El prompt, el proveedor y la
+> API key del gimnasio se editan con `PUT /api/gyms/settings/ai-prompt?gymId=<id>`, que
+> hace merge (un `admin` puede usar las rutas de tenant con `?gymId=`).
 
-**Errores:** `404` gym inexistente.
+**Respuesta `200`:** el gym con la misma proyección segura que `GET /api/admin/gyms/:id`.
+
+**Errores:** `404` gym inexistente · `409` CUIT duplicado.
 
 ### `DELETE /api/admin/gyms/:id`
 
@@ -1050,9 +1089,16 @@ rutina queda en `estadoGeneracion: 'error'`.
 {
   "status": "success",
   "message": "Routine generated successfully",
-  "data": { "routineId": "66c1...", "fuenteCredencial": "gym" }
+  "data": {
+    "routineId": "66c1...",
+    "fuenteCredencial": "gym",
+    "estadoEnvio": "enviado"
+  }
 }
 ```
+
+`estadoEnvio` viaja en la respuesta para que el cliente sepa si el socio efectivamente
+recibió la rutina **sin tener que volver a pedirla**. Ver la tabla de estados más abajo.
 
 `fuenteCredencial` dice **con qué credencial se generó** (ver §6): `gym` (la del propio
 gimnasio), `plataforma` (la del entorno, mismo proveedor) o `respaldo` (se degradó a otro
@@ -1506,11 +1552,12 @@ seed-superadmin.ts  →  POST /api/auth/login (admin)
 
 Comportamientos reales de esta versión, documentados para que no sorprendan:
 
-- `GET /api/admin/gyms/:id` y `GET /api/dashboard/summary` son **placeholders**: responden
-  `200` con datos ficticios en lugar de `501`.
+- `GET /api/dashboard/summary` es un **placeholder**: responde `200` con datos ficticios
+  en lugar de `501`.
 - `DELETE /api/admin/gyms/:id` **no desactiva a los usuarios** del gym; hay que hacerlo a mano.
-- `PUT /api/admin/gyms/:id` reemplaza `aiConfig`/`whatsappConfig` enteros, lo que **borra
-  las credenciales cifradas** del gym. Usar `/api/gyms/settings/*` para cambios parciales.
+- El panel de admin **no puede editar la configuración de IA** de un gimnasio: `aiConfig`
+  se quitó de `PUT /api/admin/gyms/:id` porque reemplazaba el objeto entero y borraba la
+  API key cifrada. El camino es `PUT /api/gyms/settings/ai-prompt?gymId=<id>`.
 - `GET /api/onboarding/status` es público pese al comentario del código.
 - **No se pueden anular facturas por API.** Anular ante AFIP exige emitir una nota de
   crédito real, no cambiar el estado en la base. Las facturas en `error` se consultan pero

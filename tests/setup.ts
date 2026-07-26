@@ -12,6 +12,9 @@ process.env.NODE_ENV ??= 'test';
 process.env.MONGO_URI ??= 'mongodb://127.0.0.1:27017/gym-crm-test';
 process.env.JWT_ACCESS_SECRET ??= 'test-access-secret';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret';
+// 32 bytes en hex: sin esto, cualquier test que cifre credenciales de un gym
+// explota con CRITICAL_SECURITY_ERROR antes de llegar a la aserción.
+process.env.APP_MASTER_KEY ??= 'a'.repeat(64);
 
 beforeAll(async () => {
   // Mongo en memoria: los tests corren offline, sin depender de un MongoDB local.

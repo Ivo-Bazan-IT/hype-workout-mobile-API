@@ -3,14 +3,57 @@ import { CreateGymUseCase } from '../../../application/use-cases/gym/CreateGymUs
 import { UpdateGymUseCase } from '../../../application/use-cases/gym/UpdateGymUseCase';
 import { DeleteGymUseCase } from '../../../application/use-cases/gym/DeleteGymUseCase';
 import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseCase';
+import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
+import { IGymRepository } from '../../../domain/repositories/IGymRepository';
+import { Gym } from '../../../domain/entities/Gym';
+import { NotFoundError } from '../../../shared/errors/AppError';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+
+/**
+ * Proyección del gym para el panel de super-admin.
+ *
+ * Allowlist explícito, igual que en `/api/gyms/settings`: las credenciales viven
+ * cifradas DENTRO de `aiConfig`/`whatsappConfig`, así que devolver esos objetos
+ * enteros filtraría el ciphertext. Se informa si están cargadas con un booleano,
+ * que es lo único que la interfaz necesita para mostrar "configurado ✓".
+ */
+const toAdminGymResponse = (gym: Gym) => ({
+  id: gym.id,
+  name: gym.name,
+  businessName: gym.businessName,
+  cuit: gym.cuit,
+  contactEmail: gym.contactEmail,
+  contactPhone: gym.contactPhone,
+  isActive: gym.isActive,
+  aiConfig: {
+    provider: gym.aiConfig?.provider,
+    model: gym.aiConfig?.model,
+    hasApiKey: Boolean(gym.aiConfig?.encryptedApiKey),
+  },
+  whatsappConfig: {
+    phoneNumberId: gym.whatsappConfig?.phoneNumberId ?? '',
+    hasAccessToken: Boolean(gym.whatsappConfig?.encryptedAccessToken),
+  },
+  googleFormConfig: { formId: gym.googleFormConfig?.formId },
+  afipConfig: gym.afipConfig
+    ? {
+        puntoVenta: gym.afipConfig.puntoVenta,
+        taxCondition: gym.afipConfig.taxCondition,
+        isActive: gym.afipConfig.isActive,
+      }
+    : undefined,
+  createdAt: gym.createdAt,
+  updatedAt: gym.updatedAt,
+});
 
 export class GymController {
   constructor(
     private createGymUseCase: CreateGymUseCase,
     private updateGymUseCase: UpdateGymUseCase,
     private deleteGymUseCase: DeleteGymUseCase,
-    private listGymsUseCase: ListGymsUseCase
+    private listGymsUseCase: ListGymsUseCase,
+    private updateWhatsappConfigUseCase: UpdateWhatsappConfigUseCase,
+    private gymRepository: IGymRepository
   ) {}
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -68,12 +111,12 @@ export class GymController {
     try {
       const { id } = req.params;
 
-      // El gym ya está verificado por middleware en rutas
-      // Aquí iría lógica para obtener por ID si se implementa IGymRepository.getById
-      res.json({
-        status: 'success',
-        data: { id } // Placeholder
-      });
+      const gym = await this.gymRepository.findById(id);
+      if (!gym) {
+        throw new NotFoundError('Gym');
+      }
+
+      res.json({ status: 'success', data: toAdminGymResponse(gym) });
     } catch (error) {
       next(error);
     }
@@ -82,7 +125,9 @@ export class GymController {
   async update(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      const result = await this.updateGymUseCase.execute(id, req.body);
+      const { whatsappPhoneNumberId, whatsappAccessToken, ...datosDelGym } = req.body;
+
+      const result = await this.updateGymUseCase.execute(id, datosDelGym);
 
       if (!result) {
         res.status(404).json({
@@ -92,10 +137,19 @@ export class GymController {
         return;
       }
 
-      res.json({
-        status: 'success',
-        data: result
-      });
+      // WhatsApp por separado: el caso de uso dedicado hace merge y cifra el token.
+      // Mandarlo dentro del update genérico reemplazaría el objeto y borraría la
+      // credencial que no viaja en el body.
+      const gymFinal =
+        whatsappPhoneNumberId !== undefined || whatsappAccessToken !== undefined
+          ? await this.updateWhatsappConfigUseCase.execute({
+              gymId: id,
+              phoneNumberId: whatsappPhoneNumberId,
+              accessToken: whatsappAccessToken,
+            })
+          : result;
+
+      res.json({ status: 'success', data: toAdminGymResponse(gymFinal) });
     } catch (error) {
       next(error);
     }

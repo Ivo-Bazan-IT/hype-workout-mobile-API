@@ -14,6 +14,8 @@ export const createGymSchema = z.object({
   // descartaba al reemplazar req.body con el resultado del parse.
   aiProvider: z.enum(AI_PROVIDERS).optional(),
   whatsappPhoneNumberId: z.string().min(1).optional(),
+  // Se cifra en el caso de uso. Permite dejar el gym operativo en una sola llamada.
+  whatsappAccessToken: z.string().min(1).optional(),
 });
 
 export const updateGymSchema = z.object({
@@ -25,15 +27,17 @@ export const updateGymSchema = z.object({
   // Reactivar es el inverso del soft delete de `DELETE /admin/gyms/:id`: sin este
   // campo el `validateBody` lo descartaba y el gym quedaba inactivo para siempre.
   isActive: z.boolean().optional(),
-  aiConfig: z.object({
-    provider: z.enum(AI_PROVIDERS),
-    promptTemplate: z.string(),
-    model: z.string().optional(),
-  }).optional(),
-  whatsappConfig: z.object({
-    phoneNumberId: z.string(),
-    tokenSecretRef: z.string(),
-  }).optional(),
+  // WhatsApp por campos PLANOS, no como objeto `whatsappConfig`.
+  //
+  // Aceptar el objeto entero lo reemplazaba completo y borraba el
+  // `encryptedAccessToken` del gym, que no viaja en el body por ser secreto: se
+  // editaba el teléfono del gimnasio y se perdía la credencial en silencio. Estos
+  // dos campos hacen merge y cifran, igual que /api/gyms/settings/whatsapp.
+  whatsappPhoneNumberId: z.string().min(1).optional(),
+  whatsappAccessToken: z.string().min(1).optional(),
+  // `aiConfig` se quitó por la misma razón: reemplazarlo borraba `encryptedApiKey`.
+  // El prompt, el proveedor y la key del gym se editan con
+  // PUT /api/gyms/settings/ai-prompt?gymId=<id>, que hace merge.
   pdfTemplate: z.object({
     htmlTemplate: z.string().optional(),
     cssStyles: z.string().optional(),
