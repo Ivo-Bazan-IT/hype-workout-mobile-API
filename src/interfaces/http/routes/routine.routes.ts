@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { RoutineController } from '../controllers/RoutineController';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
+import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
@@ -42,13 +43,20 @@ const createRoutineRouter = () => {
     plantillaProvider
   );
 
-  const routineController = new RoutineController(
-    generateRoutineUseCase,
+  const resendRoutineUseCase = new ResendRoutineUseCase(
     routineRepository,
+    clientRepository,
     gymRepository,
     gymSecretsRepo,
-    clientRepository,
     whatsappProviderFactory,
+    fileStorage
+  );
+
+  const routineController = new RoutineController(
+    generateRoutineUseCase,
+    resendRoutineUseCase,
+    routineRepository,
+    clientRepository,
     fileStorage
   );
 
@@ -64,6 +72,11 @@ const createRoutineRouter = () => {
 
   router.get('/client/:clientId', (req, res, next) =>
     routineController.getByClient(req, res, next)
+  );
+
+  // Dos segmentos, así que no compite con /:id
+  router.get('/:id/pdf', (req, res, next) =>
+    routineController.downloadPdf(req, res, next)
   );
 
   router.get('/:id', (req, res, next) =>

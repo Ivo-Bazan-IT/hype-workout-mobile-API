@@ -1,22 +1,19 @@
 import { Response, NextFunction } from 'express';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
+import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { IRoutineRepository } from '../../../domain/repositories/IRoutineRepository';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
-import { IGymRepository, IGymSecretsRepository } from '../../../domain/repositories/IGymRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
-import { IWhatsappProviderFactory } from '../../../domain/services/IWhatsappProviderFactory';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
 import { NotFoundError } from '../../../shared/errors/AppError';
 
 export class RoutineController {
   constructor(
     private generateRoutineUseCase: GenerateRoutineUseCase,
+    private resendRoutineUseCase: ResendRoutineUseCase,
     private routineRepository: IRoutineRepository,
-    private gymRepository: IGymRepository,
-    private gymSecretsRepo: IGymSecretsRepository,
     private clientRepository: IClientRepository,
-    private whatsappProviderFactory: IWhatsappProviderFactory,
     private fileStorage: IFileStorage
   ) {}
 
@@ -97,7 +94,18 @@ export class RoutineController {
     }
   }
 
-  async resend(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  /**
+   * Devuelve el PDF de la rutina como binario.
+   *
+   * Existe porque `routine.pdfUrl` es una ruta del filesystem del SERVIDOR
+   * (`./storage/generated/...`), no una URL pública: sin este endpoint el front
+   * recibía esa ruta y no podía hacer nada con ella. El archivo se lee por el
+   * puerto de storage, así que el día que se mueva a S3 esto no cambia.
+   *
+   * La rutina se busca SIEMPRE con el tenant: pedir el PDF de otro gimnasio tiene
+   * que dar 404, no servir el archivo.
+   */
+  async downloadPdf(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
       const gymId = getTenantId(req);
@@ -107,38 +115,60 @@ export class RoutineController {
         throw new NotFoundError('Routine');
       }
 
-      // Reenviar WhatsApp sincrónicamente
-      const gym = await this.gymRepository.findById(routine.gymId);
-      const client = await this.clientRepository.findById(routine.clientId, routine.gymId);
-
-      if (gym && client?.telefono && routine.pdfUrl) {
-        const accessToken = await this.gymSecretsRepo.getWhatsappAccessToken(routine.gymId);
-        if (!accessToken) {
-          throw new Error('WhatsApp access token not configured');
-        }
-
-        const whatsappProvider = this.whatsappProviderFactory.create({
-          phoneNumberId: gym.whatsappConfig.phoneNumberId,
-          accessToken
-        });
-
-        const pdfBuffer = await this.fileStorage.read(routine.pdfUrl);
-        const result = await whatsappProvider.sendPdfDocument({
-          to: client.telefono,
-          pdfBuffer,
-          filename: `rutina-${client.nombre}.pdf`
-        });
-
-        await this.routineRepository.update(routine.id, routine.gymId, {
-          whatsappMessageId: result.messageId
-        });
-
-        await this.routineRepository.updateStatus(routine.id, routine.gymId, 'generado', 'enviado');
+      if (!routine.pdfUrl) {
+        // La rutina existe pero su PDF no: quedó en `error`, o todavía se está
+        // generando. Es un 404 del PDF, no de la rutina.
+        throw new NotFoundError('Routine PDF');
       }
+
+      const client = await this.clientRepository.findById(routine.clientId, gymId);
+      const pdfBuffer = await this.fileStorage.read(routine.pdfUrl);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      // `inline` y no `attachment`: el caso principal es previsualizarlo en el CRM.
+      // El navegador igual permite descargarlo desde el visor.
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${this.nombreDeArchivo(client?.nombre)}"`
+      );
+
+      res.send(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Nombre de archivo seguro para la cabecera.
+   *
+   * El nombre del socio lo carga un humano y viaja dentro de un header entre
+   * comillas: sin sanear, unas comillas o un salto de línea permitirían inyectar
+   * cabeceras. Se deja solo lo que es seguro e imprimible.
+   */
+  private nombreDeArchivo(nombreCliente?: string): string {
+    const base = (nombreCliente ?? 'socio')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9 _-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 60);
+
+    return `rutina-${base || 'socio'}.pdf`;
+  }
+
+  async resend(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      const result = await this.resendRoutineUseCase.execute(id, gymId);
 
       res.json({
         status: 'success',
-        message: 'Resend completed'
+        message: 'Routine resent',
+        data: result
       });
     } catch (error) {
       next(error);

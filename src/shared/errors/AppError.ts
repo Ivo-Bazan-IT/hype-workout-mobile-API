@@ -43,3 +43,25 @@ export class ConflictError extends AppError {
     super(message, 409);
   }
 }
+
+/**
+ * El proveedor externo limitó la cuota. 429 y no 500 para que el cliente sepa que
+ * el reintento tiene sentido: no se rompió nada, hay que esperar.
+ */
+export class RateLimitError extends AppError {
+  constructor(message = 'Rate limit exceeded') {
+    super(message, 429);
+  }
+}
+
+/**
+ * Un servicio externo (IA, WhatsApp, AFIP) falló por su cuenta.
+ *
+ * 502 y no 500: el 500 dice "el backend tiene un bug" y manda a depurar donde no
+ * hay nada roto. El 502 dice "el de afuera falló", que es lo que pasó.
+ */
+export class ExternalServiceError extends AppError {
+  constructor(message = 'External service failed') {
+    super(message, 502);
+  }
+}

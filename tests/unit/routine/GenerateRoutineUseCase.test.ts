@@ -97,6 +97,9 @@ const buildUseCase = (m: ReturnType<typeof buildMocks>) =>
     m.plantillaProvider
   );
 
+const useCaseConMocks = (m: ReturnType<typeof buildMocks>) =>
+  buildUseCase(m).execute('client-1', 'gym-1');
+
 describe('GenerateRoutineUseCase', () => {
   it('renderiza el prompt del gym con los datos del cliente y lo manda a la IA', async () => {
     const mocks = buildMocks();
@@ -163,6 +166,58 @@ describe('GenerateRoutineUseCase', () => {
       'gym-1',
       'generado',
       'enviado'
+    );
+  });
+
+  it('no pierde la rutina si falla el envío por WhatsApp', async () => {
+    const mocks = buildMocks();
+    mocks.gymSecretsRepo.getWhatsappAccessToken.mockResolvedValue('gym-1-token');
+    mocks.whatsappProviderFactory.create.mockReturnValue({
+      sendPdfDocument: vi.fn().mockRejectedValue(new Error('Meta devolvió 400')),
+    });
+
+    // La rutina ya se generó y el modelo ya se cobró: tirar todo abajo porque Meta
+    // falló obligaría al gym a pagar otra generación para recuperarla
+    const result = await useCaseConMocks(mocks);
+
+    expect(result.routineId).toBe('routine-1');
+    // 'generado' con envío en 'error': queda reintentable con POST /:id/resend
+    expect(mocks.routineRepository.updateStatus).toHaveBeenLastCalledWith(
+      'routine-1',
+      'gym-1',
+      'generado',
+      'error'
+    );
+  });
+
+  it('distingue "no se pudo intentar" de "se intentó y falló"', async () => {
+    // Sin token no se llega ni a llamar a Meta: es configuración faltante, no un
+    // fallo de envío. Se resuelve completando la config, no reintentando.
+    const mocks = buildMocks();
+    await useCaseConMocks(mocks);
+
+    expect(mocks.routineRepository.updateStatus).toHaveBeenLastCalledWith(
+      'routine-1',
+      'gym-1',
+      'generado',
+      'pendiente'
+    );
+  });
+
+  it('no pierde la rutina si el token de WhatsApp no se puede descifrar', async () => {
+    const mocks = buildMocks();
+    mocks.gymSecretsRepo.getWhatsappAccessToken.mockRejectedValue(
+      new Error('could not be decrypted')
+    );
+
+    const result = await useCaseConMocks(mocks);
+
+    expect(result.routineId).toBe('routine-1');
+    expect(mocks.routineRepository.updateStatus).toHaveBeenLastCalledWith(
+      'routine-1',
+      'gym-1',
+      'generado',
+      'error'
     );
   });
 

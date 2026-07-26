@@ -58,8 +58,24 @@ Error:
 | `403`  | Rol insuficiente (`requireAdmin`) o usuario `gym` sin `gymId` en el token                                                                                                                    |
 | `404`  | Recurso inexistente **o perteneciente a otro tenant** (indistinguible a propósito)                                                                                                           |
 | `409`  | Conflicto de unicidad (email, CUIT, o `documento` al actualizar un cliente)                                                                                                                  |
-| `429`  | Rate limit superado                                                                                                                                                                          |
-| `500`  | Error inesperado                                                                                                                                                                             |
+| `429`  | Rate limit superado, **incluido el del proveedor de IA**. Nada se rompió: el reintento tiene sentido                                                                                         |
+| `500`  | Error inesperado **del backend**. Si aparece generando una rutina, es un bug nuestro, no del proveedor                                                                                       |
+| `502`  | Un servicio externo (IA) falló por su cuenta: 5xx, timeout o conexión caída                                                                                                                  |
+
+> **Errores del proveedor de IA.** `POST /api/routines/generate/:clientId` los traduce a un
+> código honesto en vez de esconderlos en un `500`, y **propaga el mensaje del proveedor**
+> para que se pueda actuar sin mirar el log del servidor:
+>
+> | Lo que pasó                          | Código | Qué hacer                                          |
+> | ------------------------------------ | ------ | -------------------------------------------------- |
+> | Cuota del modelo agotada             | `429`  | Reintentar, o cargar la API key propia del gym     |
+> | API key rechazada por el proveedor   | `400`  | Corregirla en la configuración del gimnasio        |
+> | Modelo inexistente o mal nombrado    | `400`  | Corregir `model` en la configuración               |
+> | El proveedor se cayó o no respondió  | `502`  | Reintentar más tarde; no hay nada que configurar   |
+>
+> Una key rechazada da **`400` y no `401`** a propósito: un `401` se lee como "la sesión
+> expiró" y mandaría al usuario al login, cuando su sesión está perfecta y lo que falla es
+> una credencial del gimnasio.
 
 > **Emails y caracteres no ASCII.** La validación de email de Zod rechaza acentos y `ñ` en
 > la parte local: `dueño@gimnasio.com` devuelve `400`. Usar `dueno@gimnasio.com`.
@@ -1001,7 +1017,22 @@ prompt de contenido** (el del gym, o el standard si no configuró ninguno) reemp
 placeholders → llama al proveedor y modelo de IA resueltos (§6) → guarda el contenido y el
 prompt renderizado en `promptUsado` → **registra el consumo de tokens** (§4.5) → renderiza
 el PDF con Puppeteer **sobre el fondo de la plantilla** (4.1.1) → lo persiste en storage →
-lo envía por WhatsApp → marca el estado final. Si algo falla, la rutina queda en `error`.
+lo envía por WhatsApp → marca el estado final. Si algo falla **hasta el PDF inclusive**, la
+rutina queda en `estadoGeneracion: 'error'`.
+
+> **El envío por WhatsApp es best-effort y NO tira abajo la generación.** Para cuando se
+> llega a enviar, el modelo ya se cobró y el PDF ya está guardado: perder todo eso porque
+> Meta devolvió un error obligaría al gimnasio a pagar otra generación para recuperarlo.
+> La respuesta sigue siendo `200` y el resultado queda en `estadoEnvio`:
+>
+> | `estadoEnvio` | Qué pasó                                                    | Cómo se resuelve                      |
+> | ------------- | ----------------------------------------------------------- | ------------------------------------- |
+> | `enviado`     | El socio lo recibió                                         | —                                     |
+> | `pendiente`   | **No se pudo ni intentar**: falta el número del gym, su token o el teléfono del socio | Completando esa configuración |
+> | `error`       | **Se intentó y falló**                                      | `POST /api/routines/:id/resend`       |
+>
+> La diferencia entre `pendiente` y `error` importa para la UI: en el primer caso reintentar
+> no sirve de nada hasta que se complete la configuración.
 
 **Necesita:**
 
@@ -1071,6 +1102,32 @@ Devuelve una rutina (contenido generado, `pdfUrl`, estados, `whatsappMessageId`,
 
 **Necesita:** tenant resoluble y que la rutina pertenezca a ese gym. **Errores:** `404`.
 
+### `GET /api/routines/:id/pdf`
+
+**Devuelve el PDF en binario**, no JSON. Es la única forma de obtener el archivo desde el
+front: `routine.pdfUrl` es una ruta del filesystem **del servidor**
+(`./storage/generated/...`), no una URL pública, y no hay archivos servidos estáticamente.
+
+**Necesita:** tenant resoluble y que la rutina pertenezca a ese gym.
+
+| Cabecera de la respuesta | Valor                                     |
+| ------------------------ | ----------------------------------------- |
+| `Content-Type`           | `application/pdf`                         |
+| `Content-Disposition`    | `inline; filename="rutina-Ivan-Bazan.pdf"` |
+| `Content-Length`         | tamaño en bytes                           |
+
+Va como `inline` y no como `attachment` porque el caso principal es previsualizarlo dentro
+del CRM (`<iframe>` / `<embed>`); el visor del navegador igual permite descargarlo. El
+nombre del socio se sanea antes de entrar en la cabecera: sin tildes, sin espacios y sin
+caracteres que permitirían inyectar headers.
+
+**Errores:**
+
+- `404` — la rutina no existe, **o es de otro gym** (no `403`: no se confirma que exista).
+- `404` — la rutina existe pero **todavía no tiene PDF**: quedó en `error` o se está
+  generando. Conviene distinguir estos dos casos en la UI mirando `estadoGeneracion`
+  (`GET /api/routines/:id`) antes de ofrecer el botón de descarga.
+
 ### `POST /api/routines/:id/resend`
 
 Reenvía por WhatsApp el PDF **ya generado** (no vuelve a llamar a la IA, así que no
@@ -1081,8 +1138,24 @@ consume tokens ni genera costo). Actualiza `whatsappMessageId` y marca `enviado`
 
 **Parámetros:** `id` en la URL. Sin body.
 
-Si falta alguna de esas condiciones, responde `200` **sin haber enviado nada** y sin
-cambiar el estado. **Errores:** `404` rutina inexistente o de otro gym.
+**Respuesta `200`:** `{ "status": "success", "message": "Routine resent",
+"data": { "whatsappMessageId": "wamid..." } }`
+
+Cada condición que impide enviar devuelve un error **accionable**, en vez del `200`
+silencioso que devolvía antes (el dueño apretaba reenviar, veía un éxito y el socio nunca
+recibía nada):
+
+| Situación                          | Código | Mensaje                                        |
+| ---------------------------------- | ------ | ---------------------------------------------- |
+| Rutina inexistente o de otro gym   | `404`  | `Routine not found`                            |
+| La rutina no tiene PDF             | `400`  | Hay que **regenerarla**, no reenviarla         |
+| El socio no tiene `telefono`       | `400`  | Cargarlo en la ficha del socio                 |
+| El gym no configuró `phoneNumberId`| `400`  | Configurarlo en `/api/gyms/settings/whatsapp`  |
+| El gym no tiene access token       | `400`  | Ídem                                           |
+| WhatsApp rechazó el mensaje        | `502`  | Incluye el motivo que devolvió Meta            |
+
+Si el envío falla, la rutina queda en `estadoEnvio: 'error'` — **reintentable**, no colgada
+en `enviando`.
 
 ---
 

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { IAIProvider, AiUsage } from '../../../domain/services/IAIProvider';
 import { INSTRUCCION_FORMATO_RUTINA } from '../../../domain/prompt/promptStandard';
+import { traducirErrorDeIA } from './aiErrors';
 
 /**
  * Adaptador de DeepSeek.
@@ -42,14 +43,19 @@ export class DeepSeekProvider implements IAIProvider {
   }): Promise<{ contenidoGenerado: Record<string, any>; usage?: AiUsage }> {
     const model = params.model || this.modeloPorDefecto;
 
-    const response = await this.client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: INSTRUCCION_FORMATO_RUTINA },
-        { role: 'user', content: params.prompt }
-      ],
-      response_format: { type: 'json_object' },
-    });
+    const response = await this.client.chat.completions
+      .create({
+        model,
+        messages: [
+          { role: 'system', content: INSTRUCCION_FORMATO_RUTINA },
+          { role: 'user', content: params.prompt }
+        ],
+        response_format: { type: 'json_object' },
+      })
+      // Traducir acá y no en el caso de uso: el vocabulario del SDK es del adaptador
+      .catch((error) => {
+        throw traducirErrorDeIA(error, 'deepseek');
+      });
 
     const content = response.choices[0].message.content ?? '{}';
     // DeepSeek puede envolver el JSON en un bloque markdown pese al response_format

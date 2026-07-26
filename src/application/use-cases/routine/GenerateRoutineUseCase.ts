@@ -14,6 +14,8 @@ import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
 import { calcularCostoEstimado } from '../../../domain/ai/pricing';
 import { CredencialIAResuelta, FuenteCredencialIA } from '../../../domain/ai/credentials';
 import { Client } from '../../../domain/entities/Client';
+import { Gym } from '../../../domain/entities/Gym';
+import { RoutineSendStatus } from '../../../domain/entities/Routine';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 
 export class GenerateRoutineUseCase {
@@ -159,38 +161,13 @@ export class GenerateRoutineUseCase {
       // Actualizar rutina con la URL del PDF
       await this.routineRepository.update(routine.id, gymId, { pdfUrl });
 
-      // 6. Enviar WhatsApp reutilizando el buffer ya generado. Requiere las tres
-      //    cosas: el número del gym, su token y el teléfono del cliente.
-      const accessToken = await this.gymSecretsRepo.getWhatsappAccessToken(gymId);
-      const phoneNumberId = gym.whatsappConfig?.phoneNumberId;
-      const puedeEnviar = Boolean(accessToken && phoneNumberId && client.telefono);
-
-      if (puedeEnviar) {
-        const whatsappProvider = this.whatsappProviderFactory.create({
-          phoneNumberId: phoneNumberId!,
-          accessToken: accessToken!
-        });
-
-        const result = await whatsappProvider.sendPdfDocument({
-          to: client.telefono!,
-          pdfBuffer,
-          filename: `rutina-${client.nombre}.pdf`
-        });
-
-        await this.routineRepository.update(routine.id, gymId, {
-          whatsappMessageId: result.messageId
-        });
-      }
+      // 6. Enviar por WhatsApp, reutilizando el buffer ya generado.
+      const estadoEnvio = await this.intentarEnvio(routine.id, gymId, gym, client, pdfBuffer);
 
       // El estado de envío refleja lo que realmente pasó: marcar 'enviado' cuando el
-      // envío se salteó dejaba rutinas que nadie recibió figurando como entregadas,
-      // y no había forma de detectarlas para reenviarlas.
-      await this.routineRepository.updateStatus(
-        routine.id,
-        gymId,
-        'generado',
-        puedeEnviar ? 'enviado' : 'pendiente'
-      );
+      // envío se salteó o falló dejaba rutinas que nadie recibió figurando como
+      // entregadas, y no había forma de detectarlas para reenviarlas.
+      await this.routineRepository.updateStatus(routine.id, gymId, 'generado', estadoEnvio);
 
       // Se devuelve la fuente para que el frontend pueda avisarle al dueño que la
       // rutina salió con el modelo de respaldo y que cargue su propia API key.
@@ -199,6 +176,60 @@ export class GenerateRoutineUseCase {
       console.error('❌ Routine generation error:', error);
       await this.routineRepository.updateStatus(routine.id, gymId, 'error');
       throw error;
+    }
+  }
+
+  /**
+   * Envía el PDF por WhatsApp y devuelve el estado resultante. **Nunca lanza.**
+   *
+   * Es best-effort a propósito: para cuando se llega acá la rutina ya se generó, el
+   * modelo ya se cobró y el PDF ya está guardado. Tirar abajo todo eso porque Meta
+   * devolvió un error perdería trabajo bueno y obligaría al gym a pagar otra
+   * generación para recuperarlo.
+   *
+   * La diferencia entre los dos estados de "no llegó" importa:
+   *  - `pendiente` → no se pudo ni intentar (falta el número del gym, su token o el
+   *    teléfono del socio). Se resuelve completando la configuración.
+   *  - `error`     → se intentó y falló. Se resuelve reintentando con
+   *    `POST /api/routines/:id/resend`.
+   */
+  private async intentarEnvio(
+    routineId: string,
+    gymId: string,
+    gym: Gym,
+    client: Client,
+    pdfBuffer: Buffer
+  ): Promise<RoutineSendStatus> {
+    try {
+      // La resolución del token va adentro del try: si el gym cargó uno y no se
+      // puede descifrar, `getWhatsappAccessToken` lanza — y eso no debe costar la
+      // rutina entera.
+      const accessToken = await this.gymSecretsRepo.getWhatsappAccessToken(gymId);
+      const phoneNumberId = gym.whatsappConfig?.phoneNumberId;
+
+      if (!accessToken || !phoneNumberId || !client.telefono) {
+        return 'pendiente';
+      }
+
+      const whatsappProvider = this.whatsappProviderFactory.create({
+        phoneNumberId,
+        accessToken
+      });
+
+      const result = await whatsappProvider.sendPdfDocument({
+        to: client.telefono,
+        pdfBuffer,
+        filename: `rutina-${client.nombre}.pdf`
+      });
+
+      await this.routineRepository.update(routineId, gymId, {
+        whatsappMessageId: result.messageId
+      });
+
+      return 'enviado';
+    } catch (error) {
+      console.error(`❌ No se pudo enviar la rutina ${routineId} por WhatsApp:`, error);
+      return 'error';
     }
   }
 
