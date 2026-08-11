@@ -26,8 +26,20 @@ export interface GymDocument {
   };
   googleFormConfig: {
     formId?: string;
-    webhookSecret?: string;
+    webhookSecretHash?: string; // bcrypt: solo hay que verificarlo, nunca leerlo
+    webhookSecretUpdatedAt?: Date;
+    fieldMapping?: {
+      nombre?: string;
+      documento?: string;
+      telefono?: string;
+      email?: string;
+      edad?: string;
+      objetivo?: string;
+      lesiones?: string;
+      diasPorSemana?: string;
+    };
   };
+  timezone?: string; // Nombre IANA. Ausente = usar ZONA_HORARIA_DEFAULT
   afipConfig: {
     puntoVenta: number;
     taxCondition: 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO' | 'EXENTO';
@@ -71,8 +83,30 @@ const gymSchema = new Schema<GymDocument>({
 
   googleFormConfig: {
     formId: { type: String },
-    webhookSecret: { type: String },
+    // Hash bcrypt del secreto del webhook. El valor en claro no se guarda en ningún
+    // lado: se muestra una sola vez al rotarlo (ver RotateGoogleFormSecretUseCase).
+    webhookSecretHash: { type: String },
+    webhookSecretUpdatedAt: { type: Date },
+    // Título exacto de la pregunta del Form que alimenta cada campo. Los cuatro
+    // primeros son columnas del cliente; los cuatro últimos viven en `encuestaData`
+    // y alimentan los placeholders sueltos del prompt de generación.
+    fieldMapping: {
+      nombre: { type: String },
+      documento: { type: String },
+      telefono: { type: String },
+      email: { type: String },
+      edad: { type: String },
+      objetivo: { type: String },
+      lesiones: { type: String },
+      diasPorSemana: { type: String },
+    },
   },
+
+  // Zona horaria del gimnasio (IANA). Sin default a nivel schema a propósito: el
+  // default vive en el dominio (`ZONA_HORARIA_DEFAULT`) y los endpoints que agrupan
+  // por hora devuelven cuál usaron. Grabarlo acá haría que un gym que nunca la
+  // configuró se vuelva indistinguible de uno que eligió Buenos Aires.
+  timezone: { type: String },
 
   afipConfig: {
     puntoVenta: { type: Number, default: 1 },

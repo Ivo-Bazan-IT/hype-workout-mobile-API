@@ -3,6 +3,8 @@
  * (mismo SDK, otro baseURL) y es el default por costo: es el que mantiene barato
  * el mantenimiento al escalar la cantidad de rutinas generadas.
  */
+import { FormFieldMapping } from '../forms/fieldMapping';
+
 export const AI_PROVIDERS = ['deepseek', 'openai', 'anthropic'] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
@@ -53,7 +55,26 @@ export interface PdfTemplate {
 
 export interface GoogleFormConfig {
   formId?: string;
-  webhookSecret?: string;
+  /**
+   * Qué pregunta del Form alimenta cada campo del cliente. Sin esto se cae a una
+   * heurística por alias que puede equivocarse de pregunta. Ver
+   * `domain/forms/fieldMapping`.
+   */
+  fieldMapping?: FormFieldMapping;
+  /**
+   * Hash bcrypt del secreto que firma los webhooks del Form del gym.
+   *
+   * Va hasheado y no cifrado como el resto de las credenciales porque el webhook
+   * solo necesita VERIFICARLO, nunca leerlo: no hay motivo para que sea
+   * recuperable. El valor en claro se muestra una única vez al rotarlo y, si se
+   * pierde, se rota de nuevo. NUNCA se expone por HTTP, ni siquiera el hash.
+   */
+  webhookSecretHash?: string;
+  /**
+   * Última rotación. Es lo que le permite al front decir "configurado el 29/07"
+   * sin tener que mostrar el secreto.
+   */
+  webhookSecretUpdatedAt?: Date;
 }
 
 export interface AfipConfig {
@@ -76,6 +97,17 @@ export interface Gym {
   whatsappConfig: WhatsappConfig;
   pdfTemplate: PdfTemplate;
   googleFormConfig: GoogleFormConfig;
+  /**
+   * Zona horaria del gimnasio, como nombre IANA
+   * (`America/Argentina/Buenos_Aires`, `America/Santiago`...).
+   *
+   * Es lo que decide qué día calendario y qué franja horaria le corresponde a un
+   * instante: el mapa de calor de asistencia y la idempotencia diaria del check-in
+   * salen de acá. Ausente significa "no la configuró", y ahí se usa
+   * `ZONA_HORARIA_DEFAULT` — nunca la del proceso Node, que depende de dónde esté
+   * desplegado el server y no del gimnasio.
+   */
+  timezone?: string;
   afipConfig?: AfipConfig;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +126,7 @@ export class GymEntity implements Gym {
     public whatsappConfig: WhatsappConfig = { phoneNumberId: '', tokenSecretRef: '' },
     public pdfTemplate: PdfTemplate = {},
     public googleFormConfig: GoogleFormConfig = {},
+    public timezone?: string,
     public afipConfig?: AfipConfig,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
@@ -114,6 +147,7 @@ export class GymMapper {
       doc.whatsappConfig,
       doc.pdfTemplate,
       doc.googleFormConfig,
+      doc.timezone,
       doc.afipConfig,
       doc.createdAt,
       doc.updatedAt
@@ -133,6 +167,7 @@ export class GymMapper {
       whatsappConfig: entity.whatsappConfig,
       pdfTemplate: entity.pdfTemplate,
       googleFormConfig: entity.googleFormConfig,
+      timezone: entity.timezone,
       afipConfig: entity.afipConfig,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

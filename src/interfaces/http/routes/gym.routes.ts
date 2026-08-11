@@ -7,12 +7,15 @@ import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseC
 import { UpdateAfipConfigUseCase } from '../../../application/use-cases/gym/UpdateAfipConfigUseCase';
 import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/UpdateAiConfigUseCase';
 import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
+import { UpdateGoogleFormConfigUseCase } from '../../../application/use-cases/gym/UpdateGoogleFormConfigUseCase';
+import { RotateGoogleFormSecretUseCase } from '../../../application/use-cases/gym/RotateGoogleFormSecretUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
+import { BcryptWebhookSecretService } from '../../../infrastructure/encryption/BcryptWebhookSecretService';
 import { Gym } from '../../../domain/entities/Gym';
 import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
-import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema, updateWhatsappConfigSchema } from '../validators/gym.validator';
+import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema, updateWhatsappConfigSchema, updateGoogleFormConfigSchema } from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
@@ -98,6 +101,17 @@ const toSafeWhatsappConfig = (gym: Gym) => ({
   hasAccessToken: Boolean(gym.whatsappConfig?.encryptedAccessToken),
 });
 
+// El hash del secreto tampoco se expone: al front le alcanza con saber si ya hay uno
+// y de cuándo es, para poder ofrecer la rotación.
+const toSafeGoogleFormConfig = (gym: Gym) => ({
+  formId: gym.googleFormConfig?.formId ?? null,
+  hasWebhookSecret: Boolean(gym.googleFormConfig?.webhookSecretHash),
+  webhookSecretUpdatedAt: gym.googleFormConfig?.webhookSecretUpdatedAt ?? null,
+  // No es sensible y el front lo necesita para mostrar qué preguntas están fijadas
+  // y cuáles se siguen resolviendo por heurística.
+  fieldMapping: gym.googleFormConfig?.fieldMapping ?? {},
+});
+
 const createUserGymRouter = () => {
   const router = Router();
 
@@ -109,6 +123,11 @@ const createUserGymRouter = () => {
   const updateWhatsappConfigUseCase = new UpdateWhatsappConfigUseCase(
     gymRepository,
     encryptionService
+  );
+  const updateGoogleFormConfigUseCase = new UpdateGoogleFormConfigUseCase(gymRepository);
+  const rotateGoogleFormSecretUseCase = new RotateGoogleFormSecretUseCase(
+    gymRepository,
+    new BcryptWebhookSecretService()
   );
 
   router.get('/settings', async (req: AuthenticatedRequest, res, next) => {
@@ -122,7 +141,7 @@ const createUserGymRouter = () => {
 
       // Allowlist explícito: solo campos no sensibles. Nunca exponer secretos
       // (whatsappConfig.tokenSecretRef/encryptedAccessToken, aiConfig.encryptedApiKey,
-      // afipConfig.encryptedApiKey/apiKeySecretRef, googleFormConfig.webhookSecret).
+      // afipConfig.encryptedApiKey/apiKeySecretRef, googleFormConfig.webhookSecretHash).
       const safeGym = {
         id: gym.id,
         name: gym.name,
@@ -136,7 +155,7 @@ const createUserGymRouter = () => {
         whatsappConfig: toSafeWhatsappConfig(gym),
         // Se mantiene el campo plano por compatibilidad con el front actual
         whatsappPhoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,
-        googleFormConfig: { formId: gym.googleFormConfig?.formId },
+        googleFormConfig: toSafeGoogleFormConfig(gym),
         afipConfig: gym.afipConfig
           ? {
               puntoVenta: gym.afipConfig.puntoVenta,
@@ -183,6 +202,55 @@ const createUserGymRouter = () => {
         res.json({
           status: 'success',
           data: { whatsappConfig: toSafeWhatsappConfig(updatedGym) },
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.put(
+    '/settings/google-form',
+    validateBody(updateGoogleFormConfigSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const updatedGym = await updateGoogleFormConfigUseCase.execute({
+          gymId: getTenantId(req),
+          ...req.body,
+        });
+
+        res.json({
+          status: 'success',
+          data: { googleFormConfig: toSafeGoogleFormConfig(updatedGym) },
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  /**
+   * Genera un secreto nuevo para el webhook del Form e invalida el anterior.
+   *
+   * Es la ÚNICA respuesta del sistema que incluye el secreto en claro: se guarda
+   * hasheado, así que si el gym no lo copia acá, no lo recupera más y tiene que
+   * volver a rotar. Va por POST y no por PUT porque no es idempotente.
+   */
+  router.post(
+    '/settings/google-form/rotate-secret',
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const { gym, secret } = await rotateGoogleFormSecretUseCase.execute({
+          gymId: getTenantId(req),
+        });
+
+        res.json({
+          status: 'success',
+          data: {
+            secret,
+            webhookSecretUpdatedAt: gym.googleFormConfig?.webhookSecretUpdatedAt ?? null,
+            message: 'Guardá este secreto ahora: no se puede volver a consultar.',
+          },
         });
       } catch (error) {
         next(error);

@@ -1,43 +1,43 @@
 import { Request, Response, NextFunction } from 'express';
 import { ProcessFormSubmissionUseCase } from '../../../application/use-cases/onboarding/ProcessFormSubmissionUseCase';
-import { GoogleFormsWebhookHandler } from '../../../infrastructure/external/forms/GoogleFormsWebhookHandler';
+import { GetOnboardingStatusUseCase } from '../../../application/use-cases/onboarding/GetOnboardingStatusUseCase';
+import { IFormsProvider } from '../../../domain/services/IFormsProvider';
+import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
+import { UnauthorizedError } from '../../../shared/errors/AppError';
 
 export class OnboardingController {
   constructor(
     private processFormUseCase: ProcessFormSubmissionUseCase,
-    private formsHandler: GoogleFormsWebhookHandler
+    // El puerto, no `GoogleFormsWebhookHandler`: el borde HTTP no tiene por qué
+    // saber que del otro lado hay un Google Form.
+    private formsProvider: IFormsProvider,
+    private getOnboardingStatusUseCase: GetOnboardingStatusUseCase
   ) {}
 
   async webhook(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const webhookSecret = req.headers['x-webhook-secret'] as string;
+      const webhookSecret = req.headers['x-webhook-secret'];
+      const { gymId, respuestas, responseId } = req.body;
 
-      if (!webhookSecret) {
-        res.status(401).json({
-          status: 'error',
-          message: 'Webhook secret required'
-        });
-        return;
+      // Un solo mensaje para los tres rechazos posibles (no mandó secreto, el gym no
+      // tiene secreto configurado, el secreto no coincide). Distinguirlos le
+      // confirmaría a quien sondee qué gymId existen y cuáles ya están operativos.
+      if (typeof webhookSecret !== 'string' || webhookSecret.length === 0) {
+        throw new UnauthorizedError('Invalid webhook secret');
       }
 
-      const { gymId, respuestas } = req.body;
+      const esValido = await this.formsProvider.verificarSecret(gymId, webhookSecret);
 
-      // Validar webhook secret
-      const { isValid } = await this.formsHandler.processSubmission(
-        webhookSecret,
-        { gymId, respuestas }
-      );
-
-      if (!isValid) {
-        res.status(401).json({
-          status: 'error',
-          message: 'Invalid webhook secret'
-        });
-        return;
+      if (!esValido) {
+        throw new UnauthorizedError('Invalid webhook secret');
       }
 
-      // Procesar submission
-      const client = await this.processFormUseCase.execute({ gymId, respuestas });
+      const client = await this.processFormUseCase.execute({
+        gymId,
+        respuestas,
+        responseId
+      });
 
       res.status(201).json({
         status: 'success',
@@ -52,16 +52,15 @@ export class OnboardingController {
     }
   }
 
-  async status(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async status(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Este endpoint mostrará el estado de últimas submissions recibidas
-      // Se podría implementar con Redis para tracking de submissions
+      const gymId = getTenantId(req);
+
+      const result = await this.getOnboardingStatusUseCase.execute({ gymId });
+
       res.json({
         status: 'success',
-        data: {
-          lastSync: new Date().toISOString(),
-          message: 'Webhook endpoint active'
-        }
+        data: result
       });
     } catch (error) {
       next(error);

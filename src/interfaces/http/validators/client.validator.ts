@@ -36,6 +36,13 @@ export const updateClientSurveySchema = z.object({
     }),
 });
 
+// Registrar el primer contacto con un lead. `fecha` es opcional: sin ella se toma
+// el momento del request. El caso de uso rechaza las futuras y las anteriores al
+// alta del cliente — eso no se puede validar acá porque depende del cliente.
+export const registerFirstContactSchema = z.object({
+  fecha: z.coerce.date({ invalid_type_error: 'Fecha inválida' }).optional(),
+});
+
 export const searchClientsSchema = z.object({
   query: z.string().optional(),
   estado: z.enum(['activo', 'inactivo', 'pendiente']).optional(),

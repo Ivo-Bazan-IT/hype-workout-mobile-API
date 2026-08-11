@@ -159,22 +159,22 @@ Acciones: solicitar cuenta, iniciar sesión.
 **A2. Planes y precios**
 Comparativa de planes: **prueba gratuita** y **plan pago**. Con toggle mensual/anual si lo
 considerás apropiado.
-⚠️ *Sin backend hoy — ver "Fuera de alcance".*
+⚠️ _Sin backend hoy — ver "Fuera de alcance"._
 
 **A3. Solicitud de cuenta**
 Formulario de alta de un gimnasio interesado: datos del negocio (nombre, razón social,
 CUIT, email y teléfono de contacto) y datos de la persona responsable.
-⚠️ *Sin backend hoy: no existe registro automático. Diseñala como **captación de lead**,
+⚠️ _Sin backend hoy: no existe registro automático. Diseñala como **captación de lead**,
 con una pantalla de confirmación honesta del tipo "recibimos tu solicitud, te contactamos
-para activar la cuenta" — no como un alta instantánea que da acceso.*
+para activar la cuenta" — no como un alta instantánea que da acceso._
 
 **A4. Login**
 Email y contraseña. Es la **puerta única para ambos roles**: el destino después de entrar
 depende del tipo de cuenta, pero la pantalla es la misma.
 Estados: credenciales incorrectas, cuenta desactivada, demasiados intentos (bloqueo
 temporal).
-⚠️ *No incluyas "olvidé mi contraseña": no existe recuperación autogestionada. Si querés
-poner algo, que sea un enlace a contacto/soporte.*
+⚠️ _No incluyas "olvidé mi contraseña": no existe recuperación autogestionada. Si querés
+poner algo, que sea un enlace a contacto/soporte._
 
 ---
 
@@ -226,8 +226,8 @@ Explica y configura el circuito por el que entran los socios: un Google Form cuy
 respuestas llegan solas al CRM.
 Contenido: estado de la conexión, identificador del formulario configurado, instrucciones
 de puesta en marcha y últimas respuestas recibidas.
-*No es un wizard de configuración inicial del producto: es la pantalla del canal de
-entrada de socios.*
+_No es un wizard de configuración inicial del producto: es la pantalla del canal de
+entrada de socios._
 
 **B9. Rutinas — listado**
 Todas las rutinas del gimnasio, con filtro por socio y por estado. **Doble estado visible:
@@ -265,6 +265,7 @@ libre, la plantilla de instrucciones con la que la IA arma las rutinas: describe
 equipamiento, sus espacios, sus restricciones y su tono.
 
 Necesita:
+
 - Un **editor de texto amplio** con inserción de **variables** (`{{cliente_nombre}}`,
   `{{respuestas_encuesta}}`, `{{gym_nombre}}`, fechas, etc.) — hay 9 en total. Que se
   puedan insertar haciendo clic, no escribiéndolas de memoria.
@@ -302,8 +303,8 @@ de usuario y **cerrar sesión**.
 
 **C1. Dashboard de plataforma**
 Visión global: cantidad de gimnasios activos, altas recientes, salud general.
-⚠️ *El endpoint que lo alimenta hoy es un placeholder sin datos reales. Diseñá la pantalla
-completa igual, pero contemplá un estado "métricas no disponibles todavía".*
+⚠️ _El endpoint que lo alimenta hoy es un placeholder sin datos reales. Diseñá la pantalla
+completa igual, pero contemplá un estado "métricas no disponibles todavía"._
 
 **C2. Gimnasios — listado**
 Tabla de todos los gimnasios: nombre, razón social, CUIT, contacto, estado.
@@ -323,10 +324,10 @@ facturación, consumo de IA y configuración.
 
 **C5. Gimnasio — edición**
 Edición de los datos del gimnasio.
-⚠️ *Esta pantalla tiene una trampa real: guardar la configuración de IA o de WhatsApp desde
+⚠️ _Esta pantalla tiene una trampa real: guardar la configuración de IA o de WhatsApp desde
 acá **borra las credenciales cargadas** del gimnasio. Diseñá una advertencia visible, o
 directamente sacá esos bloques de este formulario y remitilos a las pantallas de
-configuración del tenant.*
+configuración del tenant._
 
 **C6. Usuarios — listado**
 Usuarios dueños de gimnasio, con búsqueda por nombre o email y filtros por gimnasio y
@@ -367,9 +368,9 @@ refleje y no asuste de más.
 - **Cobro de la suscripción a los gimnasios.** No existe integración de pagos. Las
   pantallas de planes y precios (A2) y de solicitud de cuenta (A3) son **presentación y
   captación**, sin checkout ni gestión de suscripción.
-  ⚠️ *Cuidado con una confusión importante: el módulo de facturación del CRM (B12, B13) es
+  ⚠️ _Cuidado con una confusión importante: el módulo de facturación del CRM (B12, B13) es
   el gimnasio facturándole a sus socios ante AFIP. No tiene nada que ver con la plataforma
-  cobrándole al gimnasio. No los mezcles en la misma pantalla ni en la misma navegación.*
+  cobrándole al gimnasio. No los mezcles en la misma pantalla ni en la misma navegación._
 - **Recuperación de contraseña autogestionada.**
 - **Anular o reintentar facturas.**
 - **Registro público con acceso inmediato.**
@@ -407,7 +408,13 @@ real, no inventados. Que los textos de ejemplo sean verosímiles y en español r
 ```json
 {
   "status": "success",
-  "data": { "data": [ /* … */ ], "total": 42, "page": 1, "limit": 20, "totalPages": 3 }
+  "data": {
+    "data": [/* … */],
+    "total": 42,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 3
+  }
 }
 ```
 
@@ -418,15 +425,15 @@ paginador con esa información disponible (se puede mostrar "42 socios · págin
 
 Son literales exactos. Traducilos para mostrar, pero no inventes estados que no existen.
 
-| Entidad | Campo | Valores posibles |
-|---|---|---|
-| Socio | `estado` | `activo` · `inactivo` · `pendiente` |
-| Rutina | `estadoGeneracion` | `pendiente` · `generando` · `generado` · `error` |
-| Rutina | `estadoEnvio` | `pendiente` · `enviando` · `enviado` · `error` |
-| Factura | `estado` | `emitida` · `anulada` · `error` · `pendiente` |
-| Config IA | `provider` | `deepseek` · `openai` · `anthropic` |
-| Config AFIP | `taxCondition` | `MONOTRIBUTO` · `RESPONSABLE_INSCRIPTO` · `EXENTO` |
-| Usuario | `role` | `admin` · `gym` |
+| Entidad     | Campo              | Valores posibles                                   |
+| ----------- | ------------------ | -------------------------------------------------- |
+| Socio       | `estado`           | `activo` · `inactivo` · `pendiente`                |
+| Rutina      | `estadoGeneracion` | `pendiente` · `generando` · `generado` · `error`   |
+| Rutina      | `estadoEnvio`      | `pendiente` · `enviando` · `enviado` · `error`     |
+| Factura     | `estado`           | `emitida` · `anulada` · `error` · `pendiente`      |
+| Config IA   | `provider`         | `deepseek` · `openai` · `anthropic`                |
+| Config AFIP | `taxCondition`     | `MONOTRIBUTO` · `RESPONSABLE_INSCRIPTO` · `EXENTO` |
+| Usuario     | `role`             | `admin` · `gym`                                    |
 
 > **Cuáles aparecen de verdad hoy:** en rutinas, la generación recorre
 > `pendiente → generando → generado` (o `error`), y el envío solo queda en `pendiente` o
@@ -665,7 +672,7 @@ lo que confirma y lo que no.
 Array plano de **Rutina**, sin paginación ni envoltorio de página:
 
 ```json
-{ "status": "success", "data": [ /* Rutina, Rutina, … */ ] }
+{ "status": "success", "data": [/* Rutina, Rutina, … */] }
 ```
 
 `GET /api/routines/expiring?days=7` devuelve solo un conteo:
@@ -679,7 +686,11 @@ Array plano de **Rutina**, sin paginación ni envoltorio de página:
 Éxito (llega **cuando todo el proceso terminó**, puede tardar):
 
 ```json
-{ "status": "success", "message": "Routine generated successfully", "data": { "routineId": "66c1a3b5c8d3e01f5a846a2a" } }
+{
+  "status": "success",
+  "message": "Routine generated successfully",
+  "data": { "routineId": "66c1a3b5c8d3e01f5a846a2a" }
+}
 ```
 
 La respuesta **no dice si se envió por WhatsApp**. Para saberlo hay que leer la rutina
@@ -733,11 +744,29 @@ mentiría.
     "rutinas": 3,
     "rutinasSinPrecio": 1,
     "porMes": [
-      { "year": 2026, "month": 7, "tokensTotal": 6000, "costoEstimado": 0.035, "rutinas": 3 }
+      {
+        "year": 2026,
+        "month": 7,
+        "tokensTotal": 6000,
+        "costoEstimado": 0.035,
+        "rutinas": 3
+      }
     ],
     "porModelo": [
-      { "provider": "openai", "model": "gpt-4o", "tokensTotal": 2000, "costoEstimado": 0.02, "rutinas": 1 },
-      { "provider": "deepseek", "model": "deepseek-chat", "tokensTotal": 4000, "costoEstimado": 0.015, "rutinas": 2 }
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "tokensTotal": 2000,
+        "costoEstimado": 0.02,
+        "rutinas": 1
+      },
+      {
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "tokensTotal": 4000,
+        "costoEstimado": 0.015,
+        "rutinas": 2
+      }
     ]
   }
 }
@@ -768,9 +797,16 @@ El detalle rutina por rutina es `GET /api/ai-usage`, paginado de **Registro de c
       "hasApiKey": true
     },
     "pdfTemplate": {},
-    "whatsappConfig": { "phoneNumberId": "1234567890", "hasAccessToken": false },
+    "whatsappConfig": {
+      "phoneNumberId": "1234567890",
+      "hasAccessToken": false
+    },
     "googleFormConfig": { "formId": "1FAIpQLSc…" },
-    "afipConfig": { "puntoVenta": 1, "taxCondition": "MONOTRIBUTO", "isActive": true },
+    "afipConfig": {
+      "puntoVenta": 1,
+      "taxCondition": "MONOTRIBUTO",
+      "isActive": true
+    },
     "createdAt": "2026-05-01T10:00:00.000Z",
     "updatedAt": "2026-06-20T18:30:00.000Z"
   }
@@ -828,7 +864,12 @@ puede mostrar esas columnas.
 {
   "status": "success",
   "data": {
-    "gym": { "id": "66a0…", "name": "Hype Workout", "businessName": "Hype Workout SRL", "cuit": "30712345678" },
+    "gym": {
+      "id": "66a0…",
+      "name": "Hype Workout",
+      "businessName": "Hype Workout SRL",
+      "cuit": "30712345678"
+    },
     "user": { "id": "66a1…", "email": "dueno@hype.com", "name": "Iván Bazán" }
   }
 }
@@ -850,7 +891,12 @@ socio. Si la tabla muestra "Gimnasio", hay que cruzarlo con el listado de C2.
 Hoy responde literalmente esto:
 
 ```json
-{ "status": "success", "data": { "message": "Summary endpoint - implement aggregation across all gyms" } }
+{
+  "status": "success",
+  "data": {
+    "message": "Summary endpoint - implement aggregation across all gyms"
+  }
+}
 ```
 
 Diseñá la pantalla que **debería** existir (gimnasios activos, altas del mes, consumo
@@ -883,17 +929,17 @@ Error de validación, **campo por campo** (restricción 7):
 
 Casos con texto propio a contemplar en la UI:
 
-| Situación | Mensaje | Dónde aparece |
-|---|---|---|
-| Credenciales incorrectas | `Invalid credentials` | A4 |
-| Cuenta desactivada | `User account is deactivated` | A4 |
-| Demasiados intentos | `Too many authentication attempts, please try again later` | A4 |
-| Socio sin encuesta | `Client has no survey data. Complete the onboarding form first.` | B10 |
-| Sin credencial de IA | `No AI API key configured for provider "…". Add it in the gym settings.` | B10 |
-| Plantilla sin variables | `The prompt template must include at least one placeholder…` | B15 |
-| Variable mal escrita | `Unknown placeholders in prompt template: {{…}}. Available: …` | B15 |
-| Documento repetido | `A client with this documento already exists` | B4 |
-| Admin sin gimnasio elegido | `gymId query parameter is required for admin users` | Todo el panel admin |
+| Situación                  | Mensaje                                                                  | Dónde aparece       |
+| -------------------------- | ------------------------------------------------------------------------ | ------------------- |
+| Credenciales incorrectas   | `Invalid credentials`                                                    | A4                  |
+| Cuenta desactivada         | `User account is deactivated`                                            | A4                  |
+| Demasiados intentos        | `Too many authentication attempts, please try again later`               | A4                  |
+| Socio sin encuesta         | `Client has no survey data. Complete the onboarding form first.`         | B10                 |
+| Sin credencial de IA       | `No AI API key configured for provider "…". Add it in the gym settings.` | B10                 |
+| Plantilla sin variables    | `The prompt template must include at least one placeholder…`             | B15                 |
+| Variable mal escrita       | `Unknown placeholders in prompt template: {{…}}. Available: …`           | B15                 |
+| Documento repetido         | `A client with this documento already exists`                            | B4                  |
+| Admin sin gimnasio elegido | `gymId query parameter is required for admin users`                      | Todo el panel admin |
 
 Los mensajes del backend están **en inglés**. La UI es en español: diseñá los textos
 traducidos y tratá el mensaje crudo como dato técnico, no como copy.

@@ -1,0 +1,962 @@
+# API Endpoints — CRM Hype Workout
+
+Contrato HTTP del backend, para escribir los tipos del front **sin abrir el código del
+backend**. Si algo de acá no coincide con la respuesta real, manda el backend y este
+documento tiene el bug.
+
+**Base URL:** `http://localhost:PORT/api` · **Prefijo:** `/api`
+
+> **Este archivo vive en `back/docs/` a propósito.** Antes estaba en `front/` y se
+> actualizaba después de cada tanda, así que llegó a estar dos tandas atrasado: el
+> documento describe el backend y se invalida justo cuando el backend cambia, de modo
+> que conviene que viva al lado del código que lo invalida. Verificado archivo por
+> archivo el **2026-08-10**.
+
+---
+
+## 1. Reglas transversales
+
+Valen para toda la API. Es lo que más caro sale descubrir tarde.
+
+### 1.1 El envelope
+
+Todo viaja como `{ status, data }`:
+
+```json
+{ "status": "success", "data": { } }
+```
+
+**Lo paginado anida.** El `PaginatedResult<T>` va adentro de `data`:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "data": [],
+    "total": 0,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 0
+  }
+}
+```
+
+O sea `response.data.data` para las filas. No es una particularidad de `/checkins`: es
+el envelope de toda la API.
+
+Los errores: `{ "status": "error", "message": "string" }`.
+
+### 1.2 Tenant
+
+`tenantMiddleware` es el único lugar donde se decide sobre qué gimnasio opera un
+request.
+
+| Rol | Cómo se resuelve el gym |
+|---|---|
+| `gym` | Siempre su propio `gymId` del JWT. No puede operar otro tenant. |
+| `admin` | **`?gymId=` es obligatorio.** Sin él es `400`, en *todos* los endpoints con tenant. |
+
+Excepción única: `GET /dashboard/summary` es deliberadamente cross-gym.
+
+Un recurso de otro gimnasio devuelve **`404`, no `403`**: indistinguible de uno
+inexistente a propósito, para no filtrar que existe.
+
+### 1.3 `null` no es `0`
+
+Cuando un valor no se puede calcular viaja como `null`, nunca como `0`. Dos versiones
+del mismo pozo, las dos observadas en producción:
+
+- **El cero que afirma.** `bajasEnPeriodo: 0` significa "no se fue nadie"; `null`
+  significa "este mes es anterior a `datosCompletosDesde`". En una gráfica pesa más
+  todavía: un mes en `0` dibuja una caída al piso y un mes ausente dibuja una recta que
+  atraviesa el hueco.
+- **El número grande que afirma más.** `visitasPorSocioPorSemana` llegó a devolver
+  `23.2` sobre siete horas de registro. Un `null` se lee como "todavía no"; un `23,2` se
+  lee como un hallazgo.
+
+### 1.4 Unidades: hay dos monedas y no son intercambiables
+
+| Dónde | Unidad |
+|---|---|
+| Bloque `financiero` de `/dashboard/kpis` y los `ingresos`/`mrr` de la serie | **Centavos enteros** |
+| `Invoice.monto`, `Client.historialRenovaciones[].monto`, `ingresos` de `GET /dashboard` | **Pesos** |
+
+Las tasas (`churnMensual`, `tasaRetencion`, `cohorte90Dias`, `tasaConversion`) son
+**fracciones en `[0,1]`** — `0.05` es 5%. El dominio no formatea porcentajes.
+
+⚠️ `engagement.visitasPorSocioPorSemana` **no es una tasa** sino un conteo decimal: no
+se multiplica por 100. Lo mismo `embudo.leadsPorSemana` y
+`embudo.tiempoRespuestaMinutos`.
+
+### 1.5 Fechas: la regla es el significado, no el endpoint
+
+| Clase | Campos | Formato |
+|---|---|---|
+| **Límite de período** — una medianoche, sin hora significativa | `periodo.desde/hasta`, `puntos[].desde/hasta`, `puntos[].mes`, la ventana del heatmap | `yyyy-MM-dd` (`mes` es `yyyy-MM`) |
+| **Instante** — un momento real, la hora es parte del dato | `datosCompletosDesde`, `engagement.registroDesde`, `createdAt`/`updatedAt`, fechas de entidades | ISO completo |
+
+Todos los rangos son **semiabiertos**: incluyen `desde`, excluyen `hasta`. El `hasta` de
+un mes es el `desde` del siguiente.
+
+La distinción importa más de lo que parece: una fecha de calendario formateada como
+instante se muestra **corrida un día** en UTC−3, y un día es la diferencia entre llamar
+a un socio y no llamarlo.
+
+Al **enviar** fechas, usar ISO 8601 completo — salvo `desde`/`hasta` de
+`/dashboard/kpis`, que van como `yyyy-MM-dd`.
+
+### 1.6 Zona horaria: dos cortes distintos, a propósito
+
+Se guarda todo en UTC. Después:
+
+- **Los períodos de KPI se cortan en UTC explícito.** Sobre un agregado de 30 días, tres
+  horas en el borde no cambian la lectura.
+- **El día calendario y las franjas horarias se cortan en la zona del gimnasio.** Mapa
+  de calor e idempotencia del check-in. Acá la hora *es* el dato: agrupado en UTC, el
+  pico real de las 19:00 en Argentina aparece a las 22:00.
+
+`Gym.timezone` es un nombre IANA validado en el alta y la edición. **Ausente significa
+"no configurada"** — no se graba un default, para distinguirlo de un gym que eligió
+Buenos Aires a propósito. El default (`America/Argentina/Buenos_Aires`) **viaja en la
+respuesta** del heatmap, para que el front rotule el eje con lo que se usó y no con lo
+que supone.
+
+---
+
+## 2. Autenticación (`/auth`) — público
+
+### `POST /auth/login`
+
+Rate limit: 5 intentos por IP cada 15 minutos.
+
+```json
+{ "email": "string", "password": "string" }
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "accessToken": "string",
+    "user": { "id": "string", "email": "string", "role": "admin | gym", "gymId": "string | null" }
+  }
+}
+```
+
+Además setea la cookie `refreshToken` (httpOnly, 7 días).
+
+### `POST /auth/refresh`
+
+Requiere la cookie `refreshToken`. Devuelve `{ accessToken, user }`.
+
+### `POST /auth/logout`
+
+Limpia la cookie.
+
+### `GET /auth/me`
+
+Requiere JWT. Devuelve `{ email, role, gymId }`.
+
+**Uso del token:** header `Authorization: Bearer <accessToken>`.
+
+---
+
+## 3. Admin — Gimnasios (`/admin/gyms`)
+
+> JWT + rol `admin`.
+
+- **`GET /admin/gyms`** → array de gimnasios.
+- **`GET /admin/gyms/:id`** → el gimnasio.
+- **`POST /admin/gyms`** → `{ gym, user }`.
+- **`PUT /admin/gyms/:id`** → el gimnasio actualizado.
+- **`DELETE /admin/gyms/:id`** → soft delete, `{ status, message }`.
+
+Body del alta:
+
+```json
+{
+  "name": "string",
+  "businessName": "string",
+  "cuit": "string (mín 11)",
+  "contactEmail": "string (email)",
+  "contactPhone": "string (mín 10)",
+  "adminEmail": "string (email)",
+  "adminPassword": "string (mín 6)",
+  "adminName": "string",
+  "aiProvider": "openai | anthropic | deepseek (opcional)",
+  "whatsappPhoneNumberId": "string (opcional)",
+  "timezone": "string IANA (opcional)"
+}
+```
+
+Body de la edición — **todos opcionales**:
+
+```json
+{
+  "name": "string",
+  "businessName": "string",
+  "cuit": "string",
+  "contactEmail": "string",
+  "contactPhone": "string",
+  "isActive": "boolean",
+  "whatsappPhoneNumberId": "string",
+  "timezone": "string IANA",
+  "pdfTemplate": { "htmlTemplate": "string" }
+}
+```
+
+⚠️ **WhatsApp y la IA se editan por campos planos, no como objeto.** Mandar
+`whatsappConfig` o `aiConfig` enteros reemplazaría el objeto y borraría el token
+cifrado, que no viaja en el body por ser secreto. El prompt y la credencial de IA se
+editan por `PUT /gyms/settings/ai-prompt?gymId=<id>`, que hace merge.
+
+`timezone` inválida (nombre que no es IANA) devuelve `400`.
+
+---
+
+## 4. Admin — Usuarios (`/admin/users`)
+
+> JWT + rol `admin`.
+
+- **`GET /admin/users`** y **`GET /admin/users/search`** → paginado, con filtros de query.
+- **`GET /admin/users/:id`**
+- **`POST /admin/users`**
+- **`PUT /admin/users/:id`**
+- **`PUT /admin/users/:id/password`**
+- **`DELETE /admin/users/:id`**
+
+---
+
+## 5. Gimnasio propio (`/gyms`)
+
+> JWT + tenant.
+
+### `GET /gyms/settings`
+
+Allowlist explícito de campos no sensibles. **Ningún secreto sale por acá**: ni el token
+de WhatsApp, ni la API key de IA, ni la de AFIP, ni el hash del secreto del webhook.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "string",
+    "name": "string",
+    "businessName": "string",
+    "cuit": "string",
+    "contactEmail": "string",
+    "contactPhone": "string",
+    "isActive": "boolean",
+    "aiConfig": {
+      "provider": "openai | anthropic | deepseek | undefined",
+      "promptTemplate": "string",
+      "usaPromptStandard": "boolean",
+      "model": "string | undefined",
+      "hasApiKey": "boolean"
+    },
+    "pdfTemplate": { },
+    "whatsappConfig": { "phoneNumberId": "string | null", "hasAccessToken": "boolean" },
+    "whatsappPhoneNumberId": "string | null",
+    "googleFormConfig": {
+      "formId": "string | null",
+      "hasWebhookSecret": "boolean",
+      "webhookSecretUpdatedAt": "ISO instante | null",
+      "fieldMapping": { }
+    },
+    "afipConfig": {
+      "puntoVenta": "number",
+      "taxCondition": "string",
+      "isActive": "boolean"
+    },
+    "createdAt": "ISO instante",
+    "updatedAt": "ISO instante"
+  }
+}
+```
+
+⚠️ **`googleFormConfig` NO tiene `webhookSecret`.** El secreto se guarda hasheado con
+bcrypt y sale una sola vez, por la rotación. Declarar el campo en el tipo del front fue
+un bug real.
+
+`afipConfig` es `undefined` si el gym nunca configuró facturación.
+`aiConfig.promptTemplate` es el prompt **efectivo**: si el gym nunca escribió el suyo,
+llega el standard ya cargado y `usaPromptStandard: true` permite avisar que todavía no
+lo personalizó.
+
+### `PUT /gyms/settings/ai-prompt`
+
+Body: `{ promptTemplate, provider?, model?, apiKey? }`. Devuelve `{ aiConfig }` con la
+misma forma segura de arriba.
+
+### `PUT /gyms/settings/whatsapp`
+
+Devuelve `{ whatsappConfig: { phoneNumberId, hasAccessToken } }`.
+
+### `PUT /gyms/settings/afip`
+
+Devuelve `{ afipConfig: { puntoVenta, taxCondition, isActive } | undefined }`.
+
+### `PUT /gyms/settings/google-form`
+
+```json
+{
+  "formId": "string (opcional)",
+  "fieldMapping": {
+    "nombre": "string", "documento": "string", "telefono": "string", "email": "string",
+    "edad": "string", "objetivo": "string", "lesiones": "string", "diasPorSemana": "string"
+  }
+}
+```
+
+Las ocho claves son opcionales. Los valores son el **título exacto de la pregunta** del
+Form que alimenta cada campo. `nombre`, `documento`, `telefono` y `email` alimentan
+columnas de la ficha; `edad`, `objetivo`, `lesiones` y `diasPorSemana` alimentan
+placeholders del prompt.
+
+⚠️ **El merge no sabe borrar.** Se mergea campo por campo, así que **vaciar una pregunta
+no borra el mapeo**: el merge no puede expresar un borrado. Un body vacío `{}` devuelve
+`400` ("At least one field must be provided").
+
+Devuelve `{ googleFormConfig }` con la forma segura.
+
+### `POST /gyms/settings/google-form/rotate-secret`
+
+```json
+{
+  "status": "success",
+  "data": {
+    "secret": "string",
+    "webhookSecretUpdatedAt": "ISO instante | null",
+    "message": "Guardá este secreto ahora: no se puede volver a consultar."
+  }
+}
+```
+
+⚠️ **Es el único punto del sistema por donde sale el secreto en claro.** Se guarda
+hasheado: si el gym no lo copia acá, no lo recupera y tiene que rotar de nuevo. Rotar
+**invalida el anterior**, así que el Apps Script empieza a recibir `401` hasta que
+alguien pegue el nuevo. Es `POST` y no `PUT` porque no es idempotente.
+
+---
+
+## 6. Clientes (`/clients`)
+
+> JWT + tenant.
+
+### `GET /clients` · `GET /clients/search`
+
+Query: `gymId?` (admin), `query?`, `estado?` (`activo|inactivo|pendiente`), `page` (1),
+`limit` (20).
+
+Devuelve `PaginatedResult<Client>` — recordar el anidado de §1.1.
+
+```json
+{
+  "id": "string",
+  "gymId": "string",
+  "nombre": "string",
+  "documento": "string",
+  "telefono": "string | undefined",
+  "email": "string | undefined",
+  "estado": "activo | inactivo | pendiente",
+  "fechaInicio": "ISO instante",
+  "fechaVencimiento": "ISO instante",
+  "esRecurrente": "boolean",
+  "historialRenovaciones": [{ "fecha": "ISO instante", "monto": "number (PESOS)" }],
+  "encuestaData": { },
+  "fechaConversion": "ISO instante | undefined",
+  "fechaPrimerContacto": "ISO instante | undefined",
+  "createdAt": "ISO instante",
+  "updatedAt": "ISO instante"
+}
+```
+
+⚠️ **`estado: 'inactivo'` es borrado lógico, no una baja del gimnasio.** El front lo
+rotula "Eliminado" y no lo cuenta como churn. Quién está activo de verdad lo decide
+`fechaVencimiento`.
+
+⚠️ **`fechaConversion` ausente NO significa "no convirtió".** Significa una de dos cosas
+y se distinguen mirando `encuestaData`:
+
+- `encuestaData` vacío o ausente → **es un lead**, todavía no contestó.
+- `encuestaData` con respuestas → **convirtió antes de que el campo existiera** (08/08).
+  La conversión es real; lo que no se registró es *cuándo*. No se hizo backfill con
+  `updatedAt` a propósito: habría sido un dato inventado con cara de dato real.
+
+Un badge guiado solo por `fechaConversion` marca como leads a **todos los socios viejos
+del gimnasio**.
+
+### `GET /clients/expiring?days=7`
+
+Array de clientes que vencen ese día.
+
+### `GET /clients/:id`
+
+El cliente. `404` si no existe **o es de otro gimnasio**.
+
+### `POST /clients`
+
+**Alta mínima:** solo `nombre` y `documento` son obligatorios.
+
+```json
+{
+  "nombre": "string",
+  "documento": "string",
+  "telefono": "string (mín 10, opcional)",
+  "email": "string (email, opcional)",
+  "fechaInicio": "ISO (opcional)",
+  "fechaVencimiento": "ISO (opcional)",
+  "encuestaData": { }
+}
+```
+
+Sin fechas se aplica el default de 30 días. Responde `201`.
+
+### `PUT /clients/:id`
+
+Todos los campos opcionales: `nombre`, `documento`, `telefono`, `email`, `estado`,
+`fechaVencimiento`, `encuestaData`.
+
+### `PATCH /clients/:id/encuesta`
+
+```json
+{
+  "telefono": "string (opcional)",
+  "email": "string (opcional)",
+  "encuestaData": { }
+}
+```
+
+`encuestaData` es obligatorio y **no puede estar vacío** (`400`). Se **fusiona** con lo
+ya cargado, no lo reemplaza. Devuelve la ficha actualizada.
+
+### `POST /clients/:id/contacto`
+
+```json
+{ "fecha": "ISO (opcional)" }
+```
+
+⚠️ **Es idempotente y tiene que serlo.** Con el socio ya contactado **devuelve la ficha
+con la fecha que ya tenía**, sin tocar nada, y responde `200`. El KPI mide el *primer*
+contacto; si ganara el último, mediría "cuándo hablamos por última vez".
+
+Por eso la UI puede llamarlo sin miedo a duplicar, pero **no puede ofrecerlo como
+"actualizar fecha de contacto"**.
+
+`fecha` sirve para cargar hacia atrás: el contacto real suele ser un llamado o un
+WhatsApp que se registra más tarde, y sin ese parámetro el KPI mediría la demora
+administrativa en vez de la comercial.
+
+| Caso | Respuesta |
+|---|---|
+| `fecha` futura | `400` — daría un tiempo de respuesta negativo |
+| `fecha` anterior al `createdAt` del cliente | `400` — mediría contra un lead que no existía |
+| Cliente de otro gym | `404` |
+
+### `POST /clients/:id/renew`
+
+Body `{ "monto": number }` (positivo, **en pesos**). Extiende el vencimiento 30 días y
+deja el evento de membresía del que salen los KPIs.
+
+### `DELETE /clients/:id`
+
+Soft delete → `estado: 'inactivo'`. `{ status, message }`.
+
+---
+
+## 7. Check-ins (`/checkins`)
+
+> JWT + tenant.
+
+### `POST /checkins`
+
+```json
+{ "clientId": "string", "fecha": "ISO (opcional, default: ahora)" }
+```
+
+Responde `201` con el `CheckIn` (`{ id, gymId, clientId, fecha, createdAt, updatedAt }`).
+
+⚠️ **El registro es IDEMPOTENTE POR DÍA**, y el día se corta en la zona horaria del
+gimnasio. El segundo POST del mismo socio la misma fecha devuelve **`201` con el mismo
+registro**, no un error ni un duplicado: está pensado para molinetes y mostradores donde
+el segundo click sale de la duda de si el primero anduvo.
+
+La consecuencia es que **una respuesta exitosa no significa "entró alguien nuevo"**:
+comparar el `id` devuelto con el anterior es la única forma de distinguir el ingreso
+nuevo de la repetición. Un contador que suma por cada `201` cuenta de más.
+
+| Caso | Respuesta |
+|---|---|
+| Socio vencido | `201` — el vencimiento se avisa, no bloquea. Es la señal de que volvió |
+| Socio `inactivo` (borrado) | `400` |
+| Socio inexistente o de otro gym | `404` |
+
+### `GET /checkins`
+
+Query: `clientId?`, `desde?`, `hasta?` (ISO), `page` (1), `limit` (20, **tope 500**).
+
+Devuelve `PaginatedResult<CheckInListItem>`:
+
+```json
+{
+  "id": "string",
+  "gymId": "string",
+  "clientId": "string",
+  "clientNombre": "string | null",
+  "fecha": "ISO instante",
+  "createdAt": "ISO instante",
+  "updatedAt": "ISO instante"
+}
+```
+
+**`clientNombre` viaja resuelto.** `null` significa **socio borrado**, y la fila no
+desaparece: una asistencia vieja de alguien eliminado sigue siendo un hecho, y perder la
+fila entera sería peor que perder el nombre.
+
+`page` y `limit` se validan como enteros positivos: `?page=abc` da `400`, no `500`. El
+tope de 500 es una red de seguridad, no el camino previsto — para el mapa de calor está
+`/checkins/heatmap`.
+
+### `GET /checkins/heatmap?semanas=8`
+
+`semanas`: entero 1–52, default 8.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "zonaHoraria": "America/Argentina/Buenos_Aires",
+    "desde": "yyyy-MM-dd",
+    "hasta": "yyyy-MM-dd",
+    "registroDesde": "ISO instante | null",
+    "celdas": [{ "dia": 1, "hora": 19, "total": 12 }]
+  }
+}
+```
+
+- **`dia` es ISO-8601: 1 = lunes … 7 = domingo.** No es la numeración de Mongo ni la de
+  JavaScript, que arrancan en domingo. Confundirlas corre el mapa entero un día.
+- `hora` va de 0 a 23 **en la hora de pared del gimnasio**, no en UTC.
+- **Las celdas en cero NO vienen**: el resultado es disperso. "No vino nadie" y "todavía
+  no se registraba asistencia" se distinguen con `registroDesde`, no con la ausencia de
+  la celda.
+- `desde`/`hasta` son límites de ventana en la zona del gimnasio (`yyyy-MM-dd`, `hasta`
+  exclusivo). `registroDesde` es un **instante** y va con hora: son marcos distintos y
+  compararlos recortados pondría la banda rayada un día corrida.
+- **`zonaHoraria` viaja en la respuesta** para que el eje se rotule con lo que se usó y
+  no con lo que el front supone.
+
+---
+
+## 8. Rutinas (`/routines`)
+
+> JWT + tenant.
+
+### `GET /routines`
+
+Query: `gymId?` (admin), `clientId?`, `estadoEnvio?`, `estadoGeneracion?`,
+`vencimientoDesde?`, `vencimientoHasta?`, `page` (1), `limit` (20, tope 100).
+
+Devuelve `PaginatedResult<RoutineListItem>` — la rutina completa **más `clientNombre`**:
+
+```json
+{
+  "id": "string",
+  "gymId": "string",
+  "clientId": "string",
+  "clientNombre": "string | null",
+  "promptUsado": "string | undefined",
+  "contenidoGenerado": { },
+  "pdfUrl": "string | undefined",
+  "estadoGeneracion": "pendiente | generando | generado | error",
+  "estadoEnvio": "pendiente | enviando | enviado | error",
+  "whatsappMessageId": "string | undefined",
+  "fechaGeneracion": "ISO instante | undefined",
+  "fechaVencimiento": "ISO instante",
+  "createdAt": "ISO instante",
+  "updatedAt": "ISO instante"
+}
+```
+
+Los filtros trabajan **sobre el gimnasio entero**, no sobre una página. El rango de
+vencimiento es semiabierto. Orden: más reciente primero. `clientNombre` en `null` es
+socio borrado, igual que en `/checkins`.
+
+### `GET /routines/:id`
+
+La rutina. `404` si es de otro gimnasio.
+
+### `GET /routines/client/:clientId`
+
+Array de rutinas del socio, más reciente primero.
+
+### `GET /routines/expiring?days=7`
+
+`{ "count": number, "days": number }`.
+
+### `GET /routines/:id/pdf`
+
+El PDF de la rutina.
+
+### `POST /routines/generate/:clientId`
+
+**Es sincrónico y responde `200`**, no `202`: la rutina ya está generada cuando vuelve.
+
+```json
+{
+  "status": "success",
+  "message": "string",
+  "data": { "...rutina": "", "fuenteCredencial": "propia | respaldo", "estadoEnvio": "string" }
+}
+```
+
+`fuenteCredencial` distingue una rutina generada con el modelo que el gym configuró de
+una que salió por el respaldo de la plataforma. `estadoEnvio` viaja para no tener que
+volver a pedir la rutina solo para saber si salió.
+
+### `POST /routines/:id/resend`
+
+Reintenta el envío por WhatsApp.
+
+---
+
+## 9. Dashboard (`/dashboard`)
+
+> JWT. El tenant se aplica **por ruta**: `/summary` es cross-gym y no lo lleva.
+
+### `GET /dashboard`
+
+```json
+{
+  "status": "success",
+  "data": {
+    "clientesActivos": "number",
+    "clientesRecurrentes": "number",
+    "rutinasPorVencer": { "en7Dias": "number", "en5Dias": "number", "en3Dias": "number" },
+    "rutinasSinEnviar": "number",
+    "ingresos": { "mesActual": "number (PESOS)", "mesPrevio": "number (PESOS)" }
+  }
+}
+```
+
+**`clientesActivos` cuenta membresías vigentes o en gracia** — el mismo universo que
+`socios.activos` de `/dashboard/kpis`, y tiene que seguir dando el mismo número: las dos
+cifras conviven en la misma pantalla. Los borrados lógicos no cuentan en ninguno.
+
+`clientesRecurrentes` es un **subconjunto** de `clientesActivos` (mismo filtro de
+vigencia, más "renovó al menos dos veces"), así que la tarjeta "N de M activos" siempre
+cierra.
+
+`rutinasSinEnviar` son las generadas que nunca salieron hacia el socio. **Acá un `0` SÍ
+es un dato real** —"no hay ninguna trabada"— y por eso va como número y no como `null`.
+
+⚠️ **`ingresos` sale de las facturas AFIP y hoy casi siempre da `$0`**, porque la mayoría
+de los gyms no tiene facturación activa. El ingreso real —el de las renovaciones— está en
+`/dashboard/kpis`, en centavos.
+
+### `GET /dashboard/kpis`
+
+Query: `gymId?` (admin), `desde` / `hasta` en `yyyy-MM-dd`, **opcionales pero juntos**.
+Mandar uno solo devuelve `400`. Sin ninguno, el mes calendario en curso. Rango
+semiabierto.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "periodo": { "desde": "yyyy-MM-dd", "hasta": "yyyy-MM-dd" },
+    "datosCompletosDesde": "ISO instante | null",
+    "socios": {
+      "activos": "number",
+      "enGracia": "number",
+      "altasEnPeriodo": "number",
+      "bajasEnPeriodo": "number | null",
+      "crecimientoNeto": "number | null"
+    },
+    "retencion": {
+      "churnMensual": "number | null",
+      "tasaRetencion": "number | null",
+      "cohorte90Dias": "number | null"
+    },
+    "financiero": {
+      "ingresosPeriodo": "number (CENTAVOS)",
+      "mrr": "number (CENTAVOS)",
+      "arpu": "number | null (CENTAVOS)",
+      "ltv": "number | null (CENTAVOS)"
+    },
+    "engagement": {
+      "visitasPorSocioPorSemana": "number | null",
+      "enRiesgo": {
+        "total": "number",
+        "socios": [{ "id": "string", "nombre": "string | null" }]
+      },
+      "registroDesde": "ISO instante | null"
+    },
+    "embudo": {
+      "leadsNuevos": "number",
+      "leadsPorSemana": "number | null",
+      "conversionesEnPeriodo": "number",
+      "sinConvertir": "number",
+      "sinContactar": "number",
+      "tasaConversion": "number | null",
+      "ventanaConversionDias": "number",
+      "tiempoRespuestaMinutos": "number | null"
+    }
+  }
+}
+```
+
+`engagement.enRiesgo` es `null` entero (no un objeto vacío) mientras no haya 14 días de
+registro. Lo mismo el bloque completo si el gym nunca registró una asistencia.
+
+**Semánticas que no se deducen del JSON:**
+
+1. **`socios.activos` incluye a los que están en gracia.** Los estados son
+   `vigente | en_gracia | de_baja`, y activo es "no está de baja". Por lo tanto
+   **`socios.enGracia` es un subconjunto de `socios.activos`, no una categoría
+   hermana.** La gracia son 5 días y significa que renovar tarde es pagar tarde, no
+   darse de baja y volver.
+2. **`socios.activos` es puntual a HOY, no del período.** Pedir los KPIs de febrero no
+   cambia ese número.
+3. **`visitasPorSocioPorSemana` viene en `null` con menos de 7 días de registro**, y el
+   corte aplica también si el rango pedido es corto: sobre 3 días, un promedio semanal
+   sigue siendo una extrapolación ×2,3. `registroDesde` viaja igual, para poder explicar
+   el hueco con una fecha en vez de un "no hay datos".
+4. **`enRiesgo` usa otro umbral —14 días— y por otra razón:** no se puede afirmar que
+   alguien lleva dos semanas sin venir si hay menos de dos semanas de registro. Los dos
+   umbrales son distintos a propósito.
+5. **`ltv` es `null` cuando el churn es `null` o `0`** (con churn 0 sería infinito).
+6. **`datosCompletosDesde` marca desde cuándo el historial es confiable.** Si el período
+   pedido empieza antes, todo `retencion` más `bajasEnPeriodo` y `crecimientoNeto`
+   vuelven en `null`. No es un error.
+
+**El embudo va al revés de la intuición.** Un **lead** es un `Client` **sin encuesta
+contestada**; la conversión es contestarla. Consecuencia: **quien entra por el Google
+Form ya llega convertido**, porque la submission trae las respuestas. Los leads son las
+altas manuales que todavía no completaron la ficha.
+
+"Conversión" acá significa **completó el onboarding**, no "se hizo socio y pagó" — el
+pago ocurre *antes* que la encuesta en este flujo. El benchmark del 30–50% de cualquier
+material de gimnasios no aplica.
+
+Tres cosas más del embudo:
+
+- **`tasaConversion` viene en `null` casi siempre y no está roto.** Es una tasa de
+  cohorte **censurada**: solo entran los leads que ya tuvieron sus 90 días completos. En
+  el mes en curso ninguno cumplió la ventana.
+- **El movimiento del día a día son los cuatro conteos crudos** (`leadsNuevos`,
+  `conversionesEnPeriodo`, `sinConvertir`, `sinContactar`), dato real siempre.
+- **`conversionesEnPeriodo` y "los convertidos de `leadsNuevos`" no son lo mismo.** Un
+  lead que entró en enero y contestó en marzo suma a la cohorte de enero y a las
+  conversiones de marzo. **No hay ninguna cuenta en la que
+  `leadsNuevos - sinConvertir === conversionesEnPeriodo`, y forzarla sería un bug.**
+
+El bloque `embudo` **viaja siempre**, incluso antes de `datosCompletosDesde`: sale de
+`Client` y no del stream de eventos de membresía.
+
+### `GET /dashboard/kpis/series?meses=12`
+
+`meses`: entero 1–24, default 12.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "datosCompletosDesde": "ISO instante | null",
+    "puntos": [
+      {
+        "mes": "yyyy-MM",
+        "desde": "yyyy-MM-dd",
+        "hasta": "yyyy-MM-dd",
+        "ingresos": "number (CENTAVOS)",
+        "mrr": "number (CENTAVOS)",
+        "altas": "number",
+        "bajas": "number | null",
+        "crecimientoNeto": "number | null",
+        "churnMensual": "number | null",
+        "tasaRetencion": "number | null"
+      }
+    ]
+  }
+}
+```
+
+- **Siempre devuelve los meses pedidos, incluidos los vacíos**, con sus ceros reales. Un
+  mes ausente del array y un mes con valores en cero se dibujan distinto: el primero
+  traza una recta que atraviesa el hueco.
+- Del más viejo al más nuevo: la gráfica se lee de izquierda a derecha.
+- `mrr` es al cierre de **su** mes, no al de hoy: si no, la línea sería una recta con el
+  valor actual repetido.
+- El punto del mes en curso coincide con `/dashboard/kpis` sin parámetros. Es contrato,
+  no coincidencia, y vale también para `churnMensual` y `tasaRetencion`.
+- **`churnMensual` y `tasaRetencion` son fracciones `[0,1]`**, sin formatear — mismas
+  unidades que el bloque `retencion` de `/dashboard/kpis`. Van en `null` en los meses
+  anteriores a `datosCompletosDesde`, por la misma razón que `bajas`, y también cuando el
+  mes **arranca con la base en cero**: sin socios al inicio no hay denominador, y un 0%
+  de churn afirmaría que no se fue nadie de un padrón que no existía. Los primeros meses
+  de un gimnasio nuevo vienen así.
+- La retención excluye del numerador a las altas del propio mes: mide quién **sobrevivió**,
+  no cuánta gente hay al final. Un mes de mucha adquisición no la infla.
+- **`cohorte90Dias` no está en la serie y no va a estar.** Es una cohorte móvil medida
+  contra *hoy*, no una métrica del mes: repetida en doce puntos daría el mismo valor doce
+  veces con cara de evolución. Sigue disponible en `/dashboard/kpis`.
+
+`datosCompletosDesde` sale en **el mismo formato que en `/dashboard/kpis`**: instante ISO
+completo. Antes el mismo campo viajaba en dos formatos según el endpoint.
+
+### `GET /dashboard/summary`
+
+> Rol `admin`. **Cross-gym**: no lleva tenant.
+
+Hoy devuelve un placeholder. Es del panel de plataforma, no del CRM del gimnasio.
+
+---
+
+## 10. Facturación (`/invoices`)
+
+> JWT + tenant.
+
+### `GET /invoices`
+
+Query: `gymId?` (admin), `clientId?`, `estado?` (`emitida|anulada|error|pendiente`),
+`tipoComprobante?`, `cae?`, **`emitidaDesde?` / `emitidaHasta?`**, `page` (1), `limit`
+(20, tope 100).
+
+Devuelve `PaginatedResult<Invoice>`:
+
+```json
+{
+  "id": "string",
+  "gymId": "string",
+  "clientId": "string",
+  "tipoComprobante": "string",
+  "cae": "string",
+  "monto": "number (PESOS)",
+  "fechaEmision": "ISO instante",
+  "estado": "emitida | anulada | error | pendiente",
+  "errorLog": "string | undefined",
+  "createdAt": "ISO instante",
+  "updatedAt": "ISO instante"
+}
+```
+
+⚠️ **Los filtros de fecha se llaman `emitidaDesde` / `emitidaHasta`.** Mandar
+`desde`/`hasta` no filtra nada y **no avisa**: Zod descarta las claves desconocidas.
+
+⚠️ **No existe `/clients/:id/invoices` y no hace falta.** `GET /invoices?clientId=` hace
+exactamente eso. Un `404` en esa ruta es un bug del cliente HTTP, no un hueco del
+backend.
+
+### `GET /invoices/revenue`
+
+Query: `gymId?`, `desde?`, `hasta?`. Devuelve el reporte con desglose mensual:
+`{ desde, hasta, total, cantidad, porMes: [{ year, month, total, cantidad }] }`.
+
+### `GET /invoices/:id`
+
+El comprobante. `404` si es de otro gimnasio.
+
+---
+
+## 11. Uso de IA (`/ai-usage`)
+
+> JWT + tenant.
+
+- **`GET /ai-usage`** → listado paginado del consumo.
+- **`GET /ai-usage/report`** → reporte agregado.
+
+---
+
+## 12. Onboarding (`/onboarding`)
+
+### `POST /onboarding/webhook` — público
+
+Lo llama Google Apps Script, que no tiene JWT. Header `x-webhook-secret` obligatorio.
+Rate limit: 100 requests por IP cada 15 minutos.
+
+```json
+{ "gymId": "string", "respuestas": { }, "responseId": "string (opcional)" }
+```
+
+Responde `201` con `{ clientId, nombre, estado }`.
+
+⚠️ **El webhook ya no crea clientes.** Una respuesta con un DNI desconocido devuelve
+`404` y no crea nada. El onboarding es secuencial: **se carga al socio en el panel →
+paga → contesta el formulario.** Un DNI que no está es un tipeo, no un socio nuevo.
+
+**La recuperación:** dar de alta al socio y **reenviar la respuesta desde el panel de
+Google Forms**. Llega con el mismo `responseId` y el backend la reprocesa en vez de
+tratarla como duplicada.
+
+El único campo imprescindible del formulario es el **documento**. Secreto inválido →
+`401`.
+
+### `GET /onboarding/status`
+
+> JWT + tenant. **No es público**: son datos del tenant, con DNI incluido.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "configurado": "boolean",
+    "fieldMapping": { } ,
+    "submissions": {
+      "total": "number",
+      "procesadas": "number",
+      "rechazadas": "number",
+      "ultimaRecibidaEn": "ISO instante | null",
+      "ultimoResultado": "procesada | rechazada | null"
+    },
+    "ultimosRechazos": [
+      { "documento": "string | null", "motivo": "string | null", "recibidaEn": "ISO instante" }
+    ]
+  }
+}
+```
+
+`fieldMapping` es `null` si el gym no declaró ninguno (se resuelve por heurística).
+
+⚠️ **`configurado` no significa "está entrando".** Solo dice que el gym generó su
+secreto. **El disparador vive en Google y el backend no lo puede consultar.** La única
+prueba de que el circuito funciona es `submissions.ultimaRecibidaEn`. Por eso el semáforo
+del front tiene tres estados y no dos.
+
+---
+
+## 13. Códigos de estado
+
+| Código | Cuándo |
+|---|---|
+| `200` | OK |
+| `201` | Creado (incluye el check-in idempotente que devuelve el registro existente) |
+| `400` | Validación, o `admin` sin `?gymId=` |
+| `401` | Sin token, token inválido, o secreto de webhook incorrecto |
+| `403` | Rol incorrecto |
+| `404` | No existe, fue borrado, **o es de otro gimnasio** |
+| `429` | Rate limit |
+| `500` | Error del servidor |
+
+Un `404` puede significar tres cosas distintas. Tratarlas todas como "función no
+disponible" le miente al usuario.
+
+---
+
+## 14. Decisiones cerradas
+
+No reabrir sin motivo nuevo.
+
+- **Las fechas se serializan por significado, no por endpoint** (§1.5).
+- **Los dos cortes de zona horaria son distintos** (§1.6). No es incoherencia: son dos
+  preguntas distintas.
+- **El `limit` de `/checkins` queda en 500** como red de seguridad. El camino previsto es
+  `/checkins/heatmap`.
+- **El webhook no vuelve a crear clientes.**
+- **`POST /clients/:id/contacto` no actualiza la fecha.**
+- **La serie sale de UNA sola lectura del historial.** Hay un test que cuenta
+  invocaciones al puerto. Es la razón de existir del endpoint.
+- **`Client.estado: 'inactivo'` es borrado lógico**, no una baja del gimnasio.
+- **Un socio vencido puede registrar ingreso**; uno `inactivo` da `400`; uno de otro
+  gimnasio da `404`.
+- **No hay ni va a haber** pantalla de clases, reservas, CAC, payback, margen bruto ni
+  trials.

@@ -28,7 +28,10 @@ const envSchema = z.object({
   WHATSAPP_DEFAULT_PHONE_NUMBER_ID: z.string().optional(),
   WHATSAPP_DEFAULT_ACCESS_TOKEN: z.string().optional(),
 
-  GOOGLE_FORMS_DEFAULT_WEBHOOK_SECRET: z.string().optional(),
+  // GOOGLE_FORMS_DEFAULT_WEBHOOK_SECRET se eliminó a propósito: era un secreto único
+  // para todos los tenants y, con el `gymId` viajando en el body del webhook público,
+  // alcanzaba para inyectar clientes en cualquier gym. Ahora cada gimnasio tiene el
+  // suyo, hasheado, rotable desde POST /api/gyms/settings/google-form/rotate-secret.
 
   PDF_TEMPLATE_STORAGE_PATH: z.string().default('./storage/templates'),
   PDF_OUTPUT_STORAGE_PATH: z.string().default('./storage/generated'),

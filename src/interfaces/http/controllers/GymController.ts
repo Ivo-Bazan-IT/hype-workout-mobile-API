@@ -35,6 +35,10 @@ const toAdminGymResponse = (gym: Gym) => ({
     hasAccessToken: Boolean(gym.whatsappConfig?.encryptedAccessToken),
   },
   googleFormConfig: { formId: gym.googleFormConfig?.formId },
+  // Se devuelve tal cual está guardada, sin caer al default: el panel necesita poder
+  // mostrar "no configurada" para que alguien la configure. Los endpoints que
+  // agrupan por hora sí resuelven el default, y devuelven cuál usaron.
+  timezone: gym.timezone,
   afipConfig: gym.afipConfig
     ? {
         puntoVenta: gym.afipConfig.puntoVenta,

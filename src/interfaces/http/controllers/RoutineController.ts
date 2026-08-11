@@ -1,8 +1,13 @@
 import { Response, NextFunction } from 'express';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
+import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
 import { IRoutineRepository } from '../../../domain/repositories/IRoutineRepository';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
+import {
+  RoutineGenerationStatus,
+  RoutineSendStatus,
+} from '../../../domain/entities/Routine';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
@@ -14,8 +19,37 @@ export class RoutineController {
     private resendRoutineUseCase: ResendRoutineUseCase,
     private routineRepository: IRoutineRepository,
     private clientRepository: IClientRepository,
-    private fileStorage: IFileStorage
+    private fileStorage: IFileStorage,
+    private searchRoutinesUseCase: SearchRoutinesUseCase
   ) {}
+
+  async list(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const gymId = getTenantId(req);
+
+      const filters = {
+        clientId: req.query.clientId as string | undefined,
+        estadoEnvio: req.query.estadoEnvio as RoutineSendStatus | undefined,
+        estadoGeneracion: req.query.estadoGeneracion as RoutineGenerationStatus | undefined,
+        vencimientoDesde: req.query.vencimientoDesde as Date | undefined,
+        vencimientoHasta: req.query.vencimientoHasta as Date | undefined
+      };
+
+      const result = await this.searchRoutinesUseCase.execute({
+        gymId,
+        filters,
+        page: req.query.page as number | undefined,
+        limit: req.query.limit as number | undefined
+      });
+
+      res.json({
+        status: 'success',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 
   async generate(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {

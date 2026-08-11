@@ -15,6 +15,8 @@ export class MongoClientRepository implements IClientRepository {
       fechaInicio: client.fechaInicio,
       fechaVencimiento: client.fechaVencimiento,
       encuestaData: client.encuestaData,
+      fechaConversion: client.fechaConversion,
+      fechaPrimerContacto: client.fechaPrimerContacto,
     });
     return ClientMapper.toDomain(doc);
   }
@@ -36,19 +38,7 @@ export class MongoClientRepository implements IClientRepository {
     limit: number = 20
   ): Promise<PaginatedResult<Client>> {
     const skip = (page - 1) * limit;
-    const query: any = { gymId };
-
-    if (filters.query) {
-      // Búsqueda por nombre (texto) o documento (regex con prefijo)
-      query.$or = [
-        { nombre: { $regex: filters.query, $options: 'i' } },
-        { documento: { $regex: `^${filters.query}`, $options: 'i' } }
-      ];
-    }
-
-    if (filters.estado) {
-      query.estado = filters.estado;
-    }
+    const query = this.buildQuery(gymId, filters);
 
     const [docs, total] = await Promise.all([
       ClientModel.find(query).skip(skip).limit(limit).sort({ createdAt: -1 }),
@@ -64,6 +54,48 @@ export class MongoClientRepository implements IClientRepository {
     };
   }
 
+  async count(gymId: string, filters: ClientSearchFilters): Promise<number> {
+    return ClientModel.countDocuments(this.buildQuery(gymId, filters));
+  }
+
+  private buildQuery(gymId: string, filters: ClientSearchFilters): Record<string, unknown> {
+    const query: Record<string, unknown> = { gymId };
+
+    if (filters.query) {
+      // Búsqueda por nombre (texto) o documento (regex con prefijo)
+      query.$or = [
+        { nombre: { $regex: filters.query, $options: 'i' } },
+        { documento: { $regex: `^${filters.query}`, $options: 'i' } }
+      ];
+    }
+
+    if (filters.estado) {
+      query.estado = filters.estado;
+    }
+
+    if (filters.esRecurrente !== undefined) {
+      query.esRecurrente = filters.esRecurrente;
+    }
+
+    // Rango semiabierto sobre el vencimiento vigente, como el resto de los rangos de
+    // la API: incluye `desde`, excluye `hasta`. De acá sale el conteo de socios con
+    // la cuota al día del dashboard.
+    if (filters.vencimientoDesde !== undefined || filters.vencimientoHasta !== undefined) {
+      const rango: Record<string, Date> = {};
+
+      if (filters.vencimientoDesde !== undefined) {
+        rango.$gte = filters.vencimientoDesde;
+      }
+      if (filters.vencimientoHasta !== undefined) {
+        rango.$lt = filters.vencimientoHasta;
+      }
+
+      query.fechaVencimiento = rango;
+    }
+
+    return query;
+  }
+
   async update(id: string, gymId: string, data: Partial<Client>): Promise<Client | null> {
     const updateData: Partial<ClientDocument> = {};
 
@@ -77,6 +109,9 @@ export class MongoClientRepository implements IClientRepository {
     if (data.esRecurrente !== undefined) updateData.esRecurrente = data.esRecurrente;
     if (data.historialRenovaciones !== undefined) updateData.historialRenovaciones = data.historialRenovaciones;
     if (data.encuestaData !== undefined) updateData.encuestaData = data.encuestaData;
+    if (data.fechaConversion !== undefined) updateData.fechaConversion = data.fechaConversion;
+    if (data.fechaPrimerContacto !== undefined)
+      updateData.fechaPrimerContacto = data.fechaPrimerContacto;
 
     const doc = await ClientModel.findOneAndUpdate(
       { _id: id, gymId },

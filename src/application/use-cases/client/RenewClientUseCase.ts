@@ -1,6 +1,7 @@
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { IGymRepository, IGymSecretsRepository } from '../../../domain/repositories/IGymRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
+import { IMembershipEventRepository } from '../../../domain/repositories/IMembershipEventRepository';
 import { IInvoiceProviderFactory } from '../../../domain/services/IInvoiceProviderFactory';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 import { Client } from '../../../domain/entities/Client';
@@ -19,7 +20,8 @@ export class RenewClientUseCase {
     private gymRepository: IGymRepository,
     private gymSecretsRepo: IGymSecretsRepository,
     private invoiceRepository: IInvoiceRepository,
-    private invoiceProviderFactory: IInvoiceProviderFactory
+    private invoiceProviderFactory: IInvoiceProviderFactory,
+    private membershipEventRepository: IMembershipEventRepository
   ) {}
 
   async execute(dto: RenewClientDTO): Promise<Client> {
@@ -34,9 +36,14 @@ export class RenewClientUseCase {
       throw new ValidationError('Monto debe ser positivo');
     }
 
+    // Un único instante para el historial y para el evento: si cada uno llamara a
+    // `new Date()` por su cuenta quedarían desfasados por milisegundos y el stream
+    // dejaría de reconciliar con `historialRenovaciones`.
+    const fechaRenovacion = new Date();
+
     // Agregar al historial de renovaciones
     const nuevaRenovacion = {
-      fecha: new Date(),
+      fecha: fechaRenovacion,
       monto: dto.monto
     };
 
@@ -49,6 +56,21 @@ export class RenewClientUseCase {
       historialRenovaciones,
       esRecurrente,
       estado: 'activo'
+    });
+
+    // Cierra la ventana anterior y abre la nueva. Es el evento del que salen el
+    // churn (si hubo hueco), el MRR (monto sobre duración) y los ingresos del
+    // período: va antes de la facturación porque el KPI no depende de que AFIP
+    // conteste, y de hecho la mayoría de los gyms no tiene facturación activa.
+    await this.membershipEventRepository.create({
+      gymId: dto.gymId,
+      clientId: dto.clientId,
+      tipo: 'renovacion',
+      fecha: fechaRenovacion,
+      monto: dto.monto,
+      vencimientoAnterior: existingClient.fechaVencimiento,
+      vencimientoNuevo: dto.nuevaFechaVencimiento,
+      origen: 'operacion'
     });
 
     // Generar factura sincrónicamente (con manejo de errores)

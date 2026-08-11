@@ -5,6 +5,7 @@ import { UpdateClientUseCase } from '../../../application/use-cases/client/Updat
 import { DeleteClientUseCase } from '../../../application/use-cases/client/DeleteClientUseCase';
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
 import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
+import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
@@ -18,6 +19,7 @@ export class ClientController {
     private deleteClientUseCase: DeleteClientUseCase,
     private renewClientUseCase: RenewClientUseCase,
     private updateClientSurveyUseCase: UpdateClientSurveyUseCase,
+    private registerFirstContactUseCase: RegisterFirstContactUseCase,
     private clientRepository: IClientRepository
   ) {}
 
@@ -163,6 +165,30 @@ export class ClientController {
         clientId: id,
         gymId,
         ...req.body
+      });
+
+      res.json({
+        status: 'success',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async registerFirstContact(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      const result = await this.registerFirstContactUseCase.execute({
+        clientId: id,
+        gymId,
+        fecha: req.body.fecha
       });
 
       res.json({

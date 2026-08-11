@@ -16,6 +16,7 @@ export class MongoGymRepository implements IGymRepository {
       whatsappConfig: gym.whatsappConfig,
       pdfTemplate: gym.pdfTemplate,
       googleFormConfig: gym.googleFormConfig,
+      timezone: gym.timezone,
     });
     return GymMapper.toDomain(doc);
   }
@@ -50,6 +51,7 @@ export class MongoGymRepository implements IGymRepository {
     if (data.whatsappConfig !== undefined) updateData.whatsappConfig = data.whatsappConfig;
     if (data.pdfTemplate !== undefined) updateData.pdfTemplate = data.pdfTemplate;
     if (data.googleFormConfig !== undefined) updateData.googleFormConfig = data.googleFormConfig;
+    if (data.timezone !== undefined) updateData.timezone = data.timezone;
     if (data.afipConfig !== undefined) updateData.afipConfig = data.afipConfig;
 
     const doc = await GymModel.findByIdAndUpdate(id, updateData, { new: true });

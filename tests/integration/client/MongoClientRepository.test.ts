@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { Types } from 'mongoose';
 import { MongoClientRepository } from '../../../src/infrastructure/database/mongoose/repositories/MongoClientRepository';
 
@@ -70,5 +70,69 @@ describe('MongoClientRepository (integración)', () => {
 
     expect(await repository.findById(created.id, otroGymId)).toBeNull();
     expect(await repository.findByDocumento(baseClient.documento, otroGymId)).toBeNull();
+  });
+
+  /**
+   * El filtro por vencimiento es el que decide `clientesActivos` en el dashboard.
+   *
+   * Estaba declarado en `ClientSearchFilters` desde antes, pero `buildQuery` no lo
+   * traducía: pasarlo no filtraba nada y tampoco fallaba. Un mock del puerto no puede
+   * detectar eso —el mock "filtra" lo que le pidan—, así que el test va acá.
+   */
+  describe('filtro por vencimiento', () => {
+    const rangoGymId = new Types.ObjectId().toString();
+
+    // `tests/setup.ts` vacía las colecciones antes de cada test: el padrón se siembra
+    // de nuevo cada vez.
+    beforeEach(async () => {
+      const repository = new MongoClientRepository();
+
+      const padron: Array<[string, string]> = [
+        ['60000001', '2026-04-01'], // vigente
+        ['60000002', '2026-03-12'], // venció hace 3 días: dentro de la gracia
+        ['60000003', '2026-02-03'], // venció hace 40 días: de baja
+      ];
+
+      for (const [documento, vencimiento] of padron) {
+        await repository.create({
+          ...baseClient,
+          gymId: rangoGymId,
+          documento,
+          estado: 'activo',
+          fechaVencimiento: new Date(`${vencimiento}T00:00:00.000Z`),
+        });
+      }
+    });
+
+    it('cuenta solo los que vencen desde la fecha dada', async () => {
+      const repository = new MongoClientRepository();
+
+      const activos = await repository.count(rangoGymId, {
+        estado: 'activo',
+        vencimientoDesde: new Date('2026-03-10T12:00:00.000Z'),
+      });
+
+      // El vigente y el que está en gracia. El de febrero no.
+      expect(activos).toBe(2);
+    });
+
+    it('el borde es semiabierto: incluye desde, excluye hasta', async () => {
+      const repository = new MongoClientRepository();
+
+      const enRango = await repository.count(rangoGymId, {
+        estado: 'activo',
+        vencimientoDesde: new Date('2026-03-12T00:00:00.000Z'),
+        vencimientoHasta: new Date('2026-04-01T00:00:00.000Z'),
+      });
+
+      // El del 12/03 entra por el `desde`; el del 01/04 queda afuera por el `hasta`.
+      expect(enRango).toBe(1);
+    });
+
+    it('sin el filtro cuenta a todos, incluidos los vencidos', async () => {
+      const repository = new MongoClientRepository();
+
+      expect(await repository.count(rangoGymId, { estado: 'activo' })).toBe(3);
+    });
   });
 });

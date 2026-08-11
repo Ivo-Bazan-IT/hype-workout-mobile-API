@@ -11,6 +11,12 @@
  * la misma lista sirva para validar al guardar y para reemplazar al generar.
  */
 
+import {
+  CampoDeEncuesta,
+  FormFieldMapping,
+  extraerCampoDeEncuesta,
+} from '../forms/fieldMapping';
+
 export const PROMPT_PLACEHOLDERS = [
   'respuestas_encuesta',
   'cliente_nombre',
@@ -19,11 +25,27 @@ export const PROMPT_PLACEHOLDERS = [
   'cliente_telefono',
   'cliente_fecha_inicio',
   'cliente_fecha_vencimiento',
+  // Campos sueltos de la encuesta. Salen del MISMO `encuestaData` que
+  // `respuestas_encuesta`, resueltos por el mapeo del gym: son para escribir
+  // "entrena {{cliente_dias_por_semana}} veces por semana" en vez de volcar el JSON
+  // entero y confiar en que el modelo lo interprete.
+  'cliente_edad',
+  'cliente_objetivo',
+  'cliente_lesiones',
+  'cliente_dias_por_semana',
   'gym_nombre',
   'fecha_actual',
 ] as const;
 
 export type PromptPlaceholder = (typeof PROMPT_PLACEHOLDERS)[number];
+
+/** Qué campo de la encuesta alimenta cada placeholder suelto. */
+const CAMPO_POR_PLACEHOLDER: Record<string, CampoDeEncuesta> = {
+  cliente_edad: 'edad',
+  cliente_objetivo: 'objetivo',
+  cliente_lesiones: 'lesiones',
+  cliente_dias_por_semana: 'diasPorSemana',
+};
 
 export interface PromptContext {
   encuestaData: Record<string, any>;
@@ -34,6 +56,11 @@ export interface PromptContext {
   clienteFechaInicio: Date;
   clienteFechaVencimiento: Date;
   gymNombre: string;
+  /**
+   * El mapeo de preguntas del gym, para resolver los placeholders sueltos. Sin él se
+   * cae a la heurística por alias, igual que hace el webhook al recibir la respuesta.
+   */
+  fieldMapping?: FormFieldMapping;
 }
 
 const VALOR_NO_INFORMADO = 'no informado';
@@ -85,6 +112,13 @@ const formatearFecha = (fecha: Date): string =>
  * que había en los adaptadores solo sustituía la primera).
  */
 export const renderPromptTemplate = (template: string, context: PromptContext): string => {
+  const deLaEncuesta = (placeholder: string): string =>
+    extraerCampoDeEncuesta(
+      context.encuestaData,
+      CAMPO_POR_PLACEHOLDER[placeholder],
+      context.fieldMapping
+    ) ?? VALOR_NO_INFORMADO;
+
   const valores: Record<PromptPlaceholder, string> = {
     respuestas_encuesta: JSON.stringify(context.encuestaData, null, 2),
     cliente_nombre: context.clienteNombre,
@@ -93,6 +127,12 @@ export const renderPromptTemplate = (template: string, context: PromptContext): 
     cliente_telefono: context.clienteTelefono || VALOR_NO_INFORMADO,
     cliente_fecha_inicio: formatearFecha(context.clienteFechaInicio),
     cliente_fecha_vencimiento: formatearFecha(context.clienteFechaVencimiento),
+    // "no informado" y no una cadena vacía: un hueco silencioso en el prompt haría
+    // que el modelo invente el dato faltante sin que quede rastro de que faltaba.
+    cliente_edad: deLaEncuesta('cliente_edad'),
+    cliente_objetivo: deLaEncuesta('cliente_objetivo'),
+    cliente_lesiones: deLaEncuesta('cliente_lesiones'),
+    cliente_dias_por_semana: deLaEncuesta('cliente_dias_por_semana'),
     gym_nombre: context.gymNombre,
     fecha_actual: formatearFecha(new Date()),
   };

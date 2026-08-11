@@ -105,3 +105,77 @@ describe('extractPlaceholders', () => {
     expect(extractPlaceholders('texto plano')).toEqual([]);
   });
 });
+
+describe('placeholders sueltos de la encuesta', () => {
+  /** Las respuestas tal como las manda el formulario "Proceso de Inscripción". */
+  const conFormularioReal = {
+    ...context,
+    encuestaData: {
+      'Nombre completo': 'Iván Bazán',
+      'DNI': '40123456',
+      'Edad': '30',
+      'Objetivos con el entrenamiento': 'Ganar masa muscular',
+      'Lesiones en curso': 'Hombro derecho',
+      'Cantidad de dias a la semana que podra entrenar': '4 dias',
+    },
+  };
+
+  it('resuelve los cuatro campos desde los títulos del formulario', () => {
+    const resultado = renderPromptTemplate(
+      '{{cliente_edad}} años, objetivo {{cliente_objetivo}}, lesiones: {{cliente_lesiones}}, entrena {{cliente_dias_por_semana}}.',
+      conFormularioReal
+    );
+
+    expect(resultado).toBe(
+      '30 años, objetivo Ganar masa muscular, lesiones: Hombro derecho, entrena 4 dias.'
+    );
+  });
+
+  it('usa el mapeo del gym cuando las preguntas se llaman distinto', () => {
+    const resultado = renderPromptTemplate('{{cliente_objetivo}}', {
+      ...context,
+      encuestaData: { '¿Para qué venís?': 'Preparacion deportiva' },
+      fieldMapping: { objetivo: '¿Para qué venís?' },
+    });
+
+    expect(resultado).toBe('Preparacion deportiva');
+  });
+
+  it('une las opciones de una pregunta de casillas', () => {
+    const resultado = renderPromptTemplate('{{cliente_objetivo}}', {
+      ...context,
+      encuestaData: {
+        'Objetivos con el entrenamiento': ['Perder peso', 'Salud general y bienestar'],
+      },
+    });
+
+    expect(resultado).toBe('Perder peso, Salud general y bienestar');
+  });
+
+  it('dice "no informado" cuando el formulario no trae el dato', () => {
+    // Un hueco vacío llevaría al modelo a inventar la edad sin dejar rastro de que
+    // faltaba; "no informado" se lo dice explícitamente.
+    const resultado = renderPromptTemplate('Edad: {{cliente_edad}}', {
+      ...context,
+      encuestaData: { 'Lesiones en curso': 'Ninguna' },
+    });
+
+    expect(resultado).toBe('Edad: no informado');
+  });
+
+  it('los acepta el validador de templates', () => {
+    expect(
+      validatePromptTemplate('Objetivo {{cliente_objetivo}} en {{cliente_dias_por_semana}}')
+    ).toBeNull();
+  });
+
+  it('siguen conviviendo con el volcado completo de la encuesta', () => {
+    const resultado = renderPromptTemplate(
+      '{{cliente_objetivo}} | {{respuestas_encuesta}}',
+      conFormularioReal
+    );
+
+    expect(resultado).toContain('Ganar masa muscular |');
+    expect(resultado).toContain('"Lesiones en curso": "Hombro derecho"');
+  });
+});

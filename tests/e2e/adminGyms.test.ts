@@ -64,6 +64,60 @@ describe('Gimnasios desde super-admin (e2e)', () => {
     expect(doc?.whatsappConfig?.encryptedAccessToken).not.toContain('EAAG-token-de-meta');
   });
 
+  /**
+   * La zona horaria decide qué día calendario es un check-in y en qué franja cae en el
+   * mapa de calor. Se valida en el alta y en la edición porque un nombre IANA
+   * inexistente hace que Mongo aborte el `$dateToParts` de la agregación: sin esta
+   * puerta, el tipeo se manifiesta semanas después como un 500 al abrir una gráfica.
+   */
+  describe('zona horaria del gimnasio', () => {
+    it('la guarda en el alta', async () => {
+      const gymId = await crear({ timezone: 'America/Santiago' });
+
+      const doc = await GymModel.findById(gymId);
+      expect(doc?.timezone).toBe('America/Santiago');
+    });
+
+    it('la deja ausente si no se manda: "no configurada" no es "eligió Buenos Aires"', async () => {
+      const gymId = await crear();
+
+      const doc = await GymModel.findById(gymId);
+      expect(doc?.timezone).toBeUndefined();
+
+      const res = await asAdmin(request(app).get(`/api/admin/gyms/${gymId}`)).expect(200);
+      expect(res.body.data.timezone).toBeUndefined();
+    });
+
+    it('la edita sin tocar el resto de la configuración', async () => {
+      const gymId = await crear({ whatsappAccessToken: 'EAAG-token-de-meta' });
+
+      const res = await asAdmin(request(app).put(`/api/admin/gyms/${gymId}`))
+        .send({ timezone: 'America/Argentina/Buenos_Aires' })
+        .expect(200);
+
+      expect(res.body.data.timezone).toBe('America/Argentina/Buenos_Aires');
+
+      // La credencial cifrada sigue en su lugar: `timezone` es escalar y no arrastra
+      // el problema de merge que tienen los bloques de config.
+      const doc = await GymModel.findById(gymId);
+      expect(doc?.whatsappConfig?.encryptedAccessToken).toBeTruthy();
+    });
+
+    it('rechaza una zona horaria inexistente en el alta (400)', async () => {
+      await asAdmin(request(app).post('/api/admin/gyms'))
+        .send(nuevoGym({ timezone: 'Marte/Olympus' }))
+        .expect(400);
+    });
+
+    it('rechaza una zona horaria inexistente al editar (400)', async () => {
+      const gymId = await crear();
+
+      await asAdmin(request(app).put(`/api/admin/gyms/${gymId}`))
+        .send({ timezone: 'Buenos Aires' })
+        .expect(400);
+    });
+  });
+
   it('devuelve el gym real, sin filtrar credenciales cifradas', async () => {
     const gymId = await crear({ whatsappAccessToken: 'EAAG-token-de-meta' });
 

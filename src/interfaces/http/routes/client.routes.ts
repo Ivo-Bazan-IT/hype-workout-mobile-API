@@ -4,6 +4,7 @@ import { MongoGymRepository } from '../../../infrastructure/database/mongoose/re
 import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
+import { MongoMembershipEventRepository } from '../../../infrastructure/database/mongoose/repositories/MongoMembershipEventRepository';
 import { AfipSdkAdapterFactory } from '../../../infrastructure/external/billing/AfipSdkAdapterFactory';
 import { CreateClientUseCase } from '../../../application/use-cases/client/CreateClientUseCase';
 import { SearchClientsUseCase } from '../../../application/use-cases/client/SearchClientsUseCase';
@@ -11,9 +12,10 @@ import { UpdateClientUseCase } from '../../../application/use-cases/client/Updat
 import { DeleteClientUseCase } from '../../../application/use-cases/client/DeleteClientUseCase';
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
 import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
+import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
 import { ClientController } from '../controllers/ClientController';
 import { createClientSchema, updateClientSchema, updateClientSurveySchema } from '../validators/client.validator';
-import { renewClientSchema } from '../validators/client.validator';
+import { registerFirstContactSchema, renewClientSchema } from '../validators/client.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 
@@ -49,20 +51,23 @@ export const createClientRoutes = () => {
   const gymSecretsRepo = new MongoGymSecretsRepository(new EncryptionService());
   const invoiceRepository = new MongoInvoiceRepository();
   const invoiceProviderFactory = new AfipSdkAdapterFactory();
+  const membershipEventRepository = new MongoMembershipEventRepository();
 
-  const createClientUseCase = new CreateClientUseCase(clientRepository);
+  const createClientUseCase = new CreateClientUseCase(clientRepository, membershipEventRepository);
   const searchClientsUseCase = new SearchClientsUseCase(clientRepository);
-  const updateClientUseCase = new UpdateClientUseCase(clientRepository);
+  const updateClientUseCase = new UpdateClientUseCase(clientRepository, membershipEventRepository);
   const deleteClientUseCase = new DeleteClientUseCase(clientRepository);
   const renewClientUseCase = new RenewClientUseCase(
     clientRepository,
     gymRepository,
     gymSecretsRepo,
     invoiceRepository,
-    invoiceProviderFactory
+    invoiceProviderFactory,
+    membershipEventRepository
   );
 
   const updateClientSurveyUseCase = new UpdateClientSurveyUseCase(clientRepository);
+  const registerFirstContactUseCase = new RegisterFirstContactUseCase(clientRepository);
 
   const clientController = new ClientController(
     createClientUseCase,
@@ -71,6 +76,7 @@ export const createClientRoutes = () => {
     deleteClientUseCase,
     renewClientUseCase,
     updateClientSurveyUseCase,
+    registerFirstContactUseCase,
     clientRepository
   );
 
@@ -112,6 +118,12 @@ export const createClientRoutes = () => {
   // PATCH /api/clients/:id/encuesta - Completar la encuesta (fusiona, no reemplaza)
   router.patch('/:id/encuesta', validateBody(updateClientSurveySchema), (req, res, next) =>
     clientController.updateSurvey(req as AuthenticatedRequest, res, next)
+  );
+
+  // POST /api/clients/:id/contacto - Marcar el primer contacto con un lead.
+  // Idempotente: repetirlo NO corre la fecha original (ver el caso de uso).
+  router.post('/:id/contacto', validateBody(registerFirstContactSchema), (req, res, next) =>
+    clientController.registerFirstContact(req as AuthenticatedRequest, res, next)
   );
 
   // DELETE /api/clients/:id - Eliminar cliente (soft delete)

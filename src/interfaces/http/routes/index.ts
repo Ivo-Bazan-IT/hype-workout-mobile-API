@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { authRoutes } from './auth.routes';
 import { gymRoutes, adminGymRoutes } from './gym.routes';
-import { onboardingRoutes } from './onboarding.routes';
+import { onboardingRoutes, onboardingStatusRoutes } from './onboarding.routes';
 import { routineRoutes } from './routine.routes';
 import { createClientRoutes } from './client.routes';
+import { createCheckInRoutes } from './checkin.routes';
 import { createInvoiceRoutes } from './invoice.routes';
 import { createAiUsageRoutes } from './aiUsage.routes';
 import { createDashboardRouter } from './dashboard.routes';
@@ -16,6 +17,8 @@ const router = Router();
 
 // Public routes
 router.use('/auth', authRoutes);
+// Solo el webhook: lo llama Google, que no tiene JWT. El resto de /onboarding se
+// monta más abajo, detrás de la autenticación.
 router.use('/onboarding', onboardingRoutes);
 
 // Protected routes - require authentication
@@ -30,9 +33,13 @@ router.use('/admin/users', requireAdmin, createAdminUserRoutes());
 // Routes that need auth + tenant
 router.use('/gyms', tenantMiddleware, gymRoutes);
 router.use('/clients', tenantMiddleware, createClientRoutes());
+router.use('/checkins', tenantMiddleware, createCheckInRoutes());
 router.use('/invoices', tenantMiddleware, createInvoiceRoutes());
 router.use('/ai-usage', tenantMiddleware, createAiUsageRoutes());
 router.use('/routines', tenantMiddleware, routineRoutes);
+// GET /onboarding/status: son datos del tenant (qué submissions llegaron y cuáles
+// rebotaron, con DNI incluido), no información pública del webhook.
+router.use('/onboarding', tenantMiddleware, onboardingStatusRoutes);
 // El dashboard aplica tenantMiddleware por-ruta: /summary es cross-gym y no lleva.
 router.use('/dashboard', createDashboardRouter());
 

@@ -33,18 +33,34 @@ function makeDeps(clientRepoOverrides: Record<string, unknown> = {}) {
       emitInvoice: vi.fn().mockResolvedValue({ cae: 'CAE-TEST' }),
     }),
   } as any;
-  return { clientRepository, gymRepository, gymSecretsRepo, invoiceRepository, invoiceProviderFactory };
+  const membershipEventRepository = {
+    create: vi.fn().mockResolvedValue({}),
+  } as any;
+  return {
+    clientRepository,
+    gymRepository,
+    gymSecretsRepo,
+    invoiceRepository,
+    invoiceProviderFactory,
+    membershipEventRepository,
+  };
 }
 
-function makeUseCase(clientRepoOverrides: Record<string, unknown> = {}) {
+function build(clientRepoOverrides: Record<string, unknown> = {}) {
   const deps = makeDeps(clientRepoOverrides);
-  return new RenewClientUseCase(
+  const useCase = new RenewClientUseCase(
     deps.clientRepository,
     deps.gymRepository,
     deps.gymSecretsRepo,
     deps.invoiceRepository,
-    deps.invoiceProviderFactory
+    deps.invoiceProviderFactory,
+    deps.membershipEventRepository
   );
+  return { useCase, deps };
+}
+
+function makeUseCase(clientRepoOverrides: Record<string, unknown> = {}) {
+  return build(clientRepoOverrides).useCase;
 }
 
 describe('RenewClientUseCase', () => {
@@ -124,5 +140,69 @@ describe('RenewClientUseCase', () => {
     });
 
     expect(result.esRecurrente).toBe(true);
+  });
+
+  it('registra el evento de renovación con la ventana que cierra y la que abre', async () => {
+    const vencimientoAnterior = new Date('2026-03-01T00:00:00.000Z');
+    const nuevaFechaVencimiento = new Date('2026-04-01T00:00:00.000Z');
+
+    const { useCase, deps } = build({
+      findById: vi.fn().mockResolvedValue({
+        id: 'client-123',
+        gymId: 'gym-123',
+        historialRenovaciones: [],
+        estado: 'activo',
+        documento: '12345678',
+        fechaVencimiento: vencimientoAnterior,
+      }),
+      update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+    });
+
+    await useCase.execute({
+      clientId: 'client-123',
+      gymId: 'gym-123',
+      monto: 1000,
+      nuevaFechaVencimiento,
+    });
+
+    expect(deps.membershipEventRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gymId: 'gym-123',
+        clientId: 'client-123',
+        tipo: 'renovacion',
+        monto: 1000,
+        vencimientoAnterior,
+        vencimientoNuevo: nuevaFechaVencimiento,
+        origen: 'operacion',
+      })
+    );
+  });
+
+  it('usa el mismo instante para el historial y para el evento', async () => {
+    const { useCase, deps } = build({
+      findById: vi.fn().mockResolvedValue({
+        id: 'client-123',
+        gymId: 'gym-123',
+        historialRenovaciones: [],
+        estado: 'activo',
+        documento: '12345678',
+        fechaVencimiento: new Date('2026-03-01T00:00:00.000Z'),
+      }),
+      update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+    });
+
+    const result = await useCase.execute({
+      clientId: 'client-123',
+      gymId: 'gym-123',
+      monto: 1000,
+      nuevaFechaVencimiento: new Date('2026-04-01T00:00:00.000Z'),
+    });
+
+    const fechaDelHistorial = result.historialRenovaciones[0].fecha;
+    const fechaDelEvento = deps.membershipEventRepository.create.mock.calls[0][0].fecha;
+
+    // Si cada uno llamara a `new Date()` por su cuenta, el stream y el historial
+    // quedarían desfasados y dejarían de reconciliar.
+    expect(fechaDelEvento).toBe(fechaDelHistorial);
   });
 });

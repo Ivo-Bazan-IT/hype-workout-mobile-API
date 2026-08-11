@@ -52,6 +52,8 @@ describe('UpdateClientSurveyUseCase', () => {
 
     expect(mockClientRepo.update).toHaveBeenCalledWith('client-1', 'gym-1', {
       telefono: '5491122334455',
+      // El cliente no tenía encuesta: esta es su conversión (ver el bloque de abajo).
+      fechaConversion: expect.any(Date),
       encuestaData: { objetivo: 'Fuerza' },
     });
   });
@@ -71,7 +73,90 @@ describe('UpdateClientSurveyUseCase', () => {
     });
 
     expect(mockClientRepo.update).toHaveBeenCalledWith('client-1', 'gym-1', {
+      fechaConversion: expect.any(Date),
       encuestaData: { objetivo: 'Resistencia' },
+    });
+  });
+
+  describe('sello de conversión', () => {
+    const makeUseCase = (existingClient: Record<string, unknown>) => {
+      const mockClientRepo = {
+        findById: vi.fn().mockResolvedValue(existingClient),
+        update: vi.fn().mockImplementation((_id, _gymId, data) =>
+          Promise.resolve({ ...existingClient, ...data })
+        ),
+      } as any;
+
+      return { useCase: new UpdateClientSurveyUseCase(mockClientRepo), mockClientRepo };
+    };
+
+    it('sella la conversión cuando el lead contesta por primera vez', async () => {
+      const { useCase, mockClientRepo } = makeUseCase({ id: 'client-1', gymId: 'gym-1' });
+
+      const antes = Date.now();
+      await useCase.execute({
+        clientId: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: { objetivo: 'Fuerza' },
+      });
+
+      const [, , data] = mockClientRepo.update.mock.calls[0];
+      expect(data.fechaConversion.getTime()).toBeGreaterThanOrEqual(antes);
+    });
+
+    it('no re-sella al completar la ficha en una segunda tanda', async () => {
+      const { useCase, mockClientRepo } = makeUseCase({
+        id: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: { objetivo: 'Fuerza' },
+        fechaConversion: new Date('2026-01-10T00:00:00.000Z'),
+      });
+
+      await useCase.execute({
+        clientId: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: { lesiones: 'Rodilla' },
+      });
+
+      // Correr la fecha acá imputaría al mes en curso una conversión de enero.
+      const [, , data] = mockClientRepo.update.mock.calls[0];
+      expect(data.fechaConversion).toBeUndefined();
+    });
+
+    it('no le inventa fecha al que convirtió antes de que el campo existiera', async () => {
+      const { useCase, mockClientRepo } = makeUseCase({
+        id: 'client-1',
+        gymId: 'gym-1',
+        // Tiene encuesta pero no `fechaConversion`: es anterior a la tanda 4.
+        encuestaData: { objetivo: 'Fuerza' },
+      });
+
+      await useCase.execute({
+        clientId: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: { lesiones: 'Ninguna' },
+      });
+
+      const [, , data] = mockClientRepo.update.mock.calls[0];
+      expect(data.fechaConversion).toBeUndefined();
+    });
+
+    it('no cuenta como conversión una encuesta vacía', async () => {
+      const { useCase, mockClientRepo } = makeUseCase({
+        id: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: {},
+      });
+
+      await useCase.execute({
+        clientId: 'client-1',
+        gymId: 'gym-1',
+        encuestaData: { objetivo: 'Fuerza' },
+      });
+
+      // El `{}` previo no era una encuesta contestada, así que esta SÍ es la conversión.
+      const [, , data] = mockClientRepo.update.mock.calls[0];
+      expect(data.fechaConversion).toBeInstanceOf(Date);
     });
   });
 

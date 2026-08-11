@@ -24,6 +24,12 @@ interface CreateGymDTO {
    * otra ruta, y un gym a medio configurar no puede mandar rutinas.
    */
   whatsappAccessToken?: string;
+  /**
+   * Zona horaria del gimnasio (IANA). Se acepta en el alta porque decide qué día
+   * calendario es un check-in: un gym dado de alta sin ella agrupa la asistencia con
+   * el default hasta que alguien se acuerde de configurarla.
+   */
+  timezone?: string;
 }
 
 export class CreateGymUseCase {
@@ -72,6 +78,9 @@ export class CreateGymUseCase {
       },
       pdfTemplate: {},
       googleFormConfig: {},
+      // Sin valor por defecto: "no configurada" es un estado distinto de "eligió
+      // Buenos Aires", y los endpoints que agrupan por hora devuelven cuál usaron.
+      timezone: dto.timezone,
     });
 
     // Crear usuario admin del gym

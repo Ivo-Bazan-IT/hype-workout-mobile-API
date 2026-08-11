@@ -22,9 +22,44 @@ export interface Client {
   esRecurrente: boolean;
   historialRenovaciones: RenewalHistory[];
   encuestaData?: Record<string, any>;
+  /**
+   * Cuándo se completó la encuesta por primera vez, o sea cuándo este lead se
+   * convirtió en socio. Es el sello del embudo (KPI 4.2).
+   *
+   * No se deriva de `updatedAt`: cualquier edición posterior lo pisaría y la
+   * conversión quedaría imputada al mes equivocado. Se graba una sola vez y no se
+   * vuelve a tocar, ni siquiera si la encuesta se completa en varias tandas.
+   *
+   * `undefined` en dos casos distintos que hay que saber distinguir: el cliente
+   * todavía no contestó (sigue siendo lead), o convirtió antes de que el campo
+   * existiera. Para el segundo, `encuestaData` está presente: se lo cuenta como
+   * convertido con fecha desconocida y no se le inventa un período.
+   */
+  fechaConversion?: Date;
+  /**
+   * Cuándo el gimnasio contactó por primera vez a este lead (KPI 4.3). Lo graba
+   * `POST /api/clients/:id/contacto` y, como el nombre indica, solo la primera vez.
+   */
+  fechaPrimerContacto?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Si el cliente contestó la encuesta. Ese es el salto que define la conversión del
+ * embudo en este CRM: no hay entidad `Lead` separada, un `Client` sin encuesta ES
+ * el lead.
+ *
+ * Exige al menos una respuesta y no la mera presencia del objeto: un `{}` que
+ * quedó de una escritura parcial no es una encuesta contestada, y contarlo como
+ * conversión inflaría el KPI sin que nadie pueda ver por qué.
+ */
+export const tieneEncuestaCompleta = (
+  encuestaData?: Record<string, any> | null
+): boolean =>
+  encuestaData !== undefined &&
+  encuestaData !== null &&
+  Object.keys(encuestaData).length > 0;
 
 export class ClientEntity implements Client {
   constructor(
@@ -40,6 +75,8 @@ export class ClientEntity implements Client {
     public historialRenovaciones: RenewalHistory[] = [],
     public email?: string,
     public encuestaData?: Record<string, any>,
+    public fechaConversion?: Date,
+    public fechaPrimerContacto?: Date,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -60,6 +97,8 @@ export class ClientMapper {
       doc.historialRenovaciones,
       doc.email,
       doc.encuestaData,
+      doc.fechaConversion,
+      doc.fechaPrimerContacto,
       doc.createdAt,
       doc.updatedAt
     );
@@ -79,6 +118,8 @@ export class ClientMapper {
       esRecurrente: entity.esRecurrente,
       historialRenovaciones: entity.historialRenovaciones,
       encuestaData: entity.encuestaData,
+      fechaConversion: entity.fechaConversion,
+      fechaPrimerContacto: entity.fechaPrimerContacto,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

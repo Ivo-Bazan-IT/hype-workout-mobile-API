@@ -1,7 +1,11 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { RoutineController } from '../controllers/RoutineController';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
+import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
+import { searchRoutinesSchema } from '../validators/routine.validator';
+import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
@@ -13,6 +17,18 @@ import { PuppeteerPdfGenerator } from '../../../infrastructure/external/pdf/PdfG
 import { FilePlantillaRutinaProvider } from '../../../infrastructure/external/pdf/FilePlantillaRutinaProvider';
 import { MetaCloudApiProviderFactory } from '../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory';
 import { LocalFileStorage } from '../../../infrastructure/storage/LocalFileStorage';
+
+// Middleware para validar query params
+function validateQuery(schema: z.ZodSchema<any>) {
+  return (req: any, _res: any, next: any) => {
+    try {
+      req.query = schema.parse(req.query);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
 
 const createRoutineRouter = () => {
   const router = Router();
@@ -52,16 +68,25 @@ const createRoutineRouter = () => {
     fileStorage
   );
 
+  const searchRoutinesUseCase = new SearchRoutinesUseCase(routineRepository);
+
   const routineController = new RoutineController(
     generateRoutineUseCase,
     resendRoutineUseCase,
     routineRepository,
     clientRepository,
-    fileStorage
+    fileStorage,
+    searchRoutinesUseCase
   );
 
   router.post('/generate/:clientId', (req, res, next) =>
     routineController.generate(req, res, next)
+  );
+
+  // GET /api/routines - Listado del gym (paginado + filtros). El tenant lo resuelve
+  // `tenantMiddleware`, que se aplica al montar el router en routes/index.ts.
+  router.get('/', validateQuery(searchRoutinesSchema), (req, res, next) =>
+    routineController.list(req as AuthenticatedRequest, res, next)
   );
 
   // Las rutas estáticas van ANTES de /:id: Express matchea en orden de registro,

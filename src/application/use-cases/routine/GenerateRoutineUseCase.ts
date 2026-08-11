@@ -111,7 +111,11 @@ export class GenerateRoutineUseCase {
         clienteTelefono: client.telefono,
         clienteFechaInicio: client.fechaInicio,
         clienteFechaVencimiento: client.fechaVencimiento,
-        gymNombre: gym.name
+        gymNombre: gym.name,
+        // El mismo mapeo con el que el webhook leyó la submission. Es lo que permite
+        // que `{{cliente_objetivo}}` encuentre la respuesta aunque el gym haya
+        // titulado la pregunta "Objetivos con el entrenamiento".
+        fieldMapping: gym.googleFormConfig?.fieldMapping
       });
 
       // 3. Generar rutina con IA (proveedor y modelo ya resueltos vía factory)
