@@ -152,3 +152,74 @@ describe('MongoRoutineRepository.search (integración)', () => {
     expect(huerfana?.clientNombre).toBeNull();
   });
 });
+
+/**
+ * `countExpiringWithin` contra Mongo real.
+ *
+ * Es el número de la tarjeta "rutinas por vencer" del dashboard, y su semántica no
+ * se puede fijar con un mock del puerto: lo que se prueba es el rango de la query.
+ * Antes contaba las que vencían EXACTAMENTE el día `days`-ésimo, así que una rutina
+ * a 4 días no entraba en ninguno de los tres contadores (7, 5 y 3) y `en7Dias` no
+ * incluía a `en3Dias`. La tarjeta no acumulaba.
+ */
+describe('MongoRoutineRepository.countExpiringWithin (integración)', () => {
+  const gymId = new Types.ObjectId().toString();
+  const otroGymId = new Types.ObjectId().toString();
+  const clientId = new Types.ObjectId().toString();
+
+  /** Una rutina que vence dentro de `dias` días, al mediodía para no pegarse a los bordes. */
+  const rutinaQueVenceEn = async (dias: number, gym: string = gymId): Promise<void> => {
+    const vence = new Date();
+    vence.setDate(vence.getDate() + dias);
+    vence.setHours(12, 0, 0, 0);
+
+    await RoutineModel.create({
+      gymId: new Types.ObjectId(gym),
+      clientId: new Types.ObjectId(clientId),
+      estadoGeneracion: 'generado',
+      estadoEnvio: 'enviado',
+      fechaVencimiento: vence,
+    });
+  };
+
+  it('acumula: los tres contadores del dashboard se anidan', async () => {
+    const repository = new MongoRoutineRepository();
+
+    await rutinaQueVenceEn(2);
+    await rutinaQueVenceEn(4);
+    await rutinaQueVenceEn(6);
+
+    // La de 4 días es la que antes no aparecía en ninguno de los tres.
+    expect(await repository.countExpiringWithin(gymId, 3)).toBe(1);
+    expect(await repository.countExpiringWithin(gymId, 5)).toBe(2);
+    expect(await repository.countExpiringWithin(gymId, 7)).toBe(3);
+  });
+
+  it('cuenta la que vence hoy y no la que ya venció', async () => {
+    const repository = new MongoRoutineRepository();
+
+    await rutinaQueVenceEn(0); // hoy al mediodía
+    await rutinaQueVenceEn(-1); // ayer
+
+    // El piso es el arranque de HOY: una rutina que venció esta mañana sigue siendo
+    // la que hay que renovar hoy; una de ayer ya no es un aviso, es un hecho.
+    expect(await repository.countExpiringWithin(gymId, 3)).toBe(1);
+  });
+
+  it('no cuenta las de otro gimnasio', async () => {
+    const repository = new MongoRoutineRepository();
+
+    await rutinaQueVenceEn(2);
+    await rutinaQueVenceEn(2, otroGymId);
+
+    expect(await repository.countExpiringWithin(gymId, 7)).toBe(1);
+  });
+
+  it('no cuenta las que vencen después de la ventana', async () => {
+    const repository = new MongoRoutineRepository();
+
+    await rutinaQueVenceEn(8);
+
+    expect(await repository.countExpiringWithin(gymId, 7)).toBe(0);
+  });
+});

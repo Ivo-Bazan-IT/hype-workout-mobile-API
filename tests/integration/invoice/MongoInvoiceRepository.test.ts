@@ -145,4 +145,173 @@ describe('MongoInvoiceRepository', () => {
 
     expect(report.total).toBe(1000);
   });
+
+  describe('cola de emisión', () => {
+    const LEASE_MS = 60_000;
+
+    const encolar = (overrides: Record<string, any> = {}) =>
+      repo.create({
+        gymId,
+        clientId,
+        tipoComprobante: 'Factura C',
+        codigoTipoComprobante: 11,
+        monto: 15000,
+        descripcion: 'Cuota Mensual - marzo',
+        estado: 'pendiente',
+        ...overrides,
+      });
+
+    const resultado = {
+      cae: '75123456789012',
+      vencimientoCae: new Date('2026-04-10'),
+      numeroComprobante: 42,
+      puntoVenta: 3,
+      codigoTipoComprobante: 11,
+      tipoComprobante: 'Factura C',
+      neto: 15000,
+      iva: 0,
+      importeTotal: 15000,
+    };
+
+    it('una factura nace lista para emitir y con cero intentos', async () => {
+      const invoice = await encolar();
+
+      expect(invoice.estado).toBe('pendiente');
+      expect(invoice.intentos).toBe(0);
+      expect(invoice.proximoIntento).toBeDefined();
+    });
+
+    it('toma la pendiente e incrementa su contador de intentos', async () => {
+      await encolar();
+
+      const tomada = await repo.claimPendiente(LEASE_MS);
+
+      expect(tomada?.intentos).toBe(1);
+      expect(tomada?.gymId).toBe(gymId);
+    });
+
+    it('dos claims concurrentes NO se llevan la misma factura', async () => {
+      // El invariante que sostiene todo: si los dos la tomaran, el socio recibiría
+      // dos comprobantes por la misma cuota y habría que anular uno con nota de
+      // crédito.
+      await encolar();
+
+      const [primera, segunda] = await Promise.all([
+        repo.claimPendiente(LEASE_MS),
+        repo.claimPendiente(LEASE_MS),
+      ]);
+
+      const tomadas = [primera, segunda].filter(Boolean);
+      expect(tomadas).toHaveLength(1);
+    });
+
+    it('no vuelve a entregar una factura reservada hasta que vence el lease', async () => {
+      await encolar();
+
+      await repo.claimPendiente(LEASE_MS);
+
+      expect(await repo.claimPendiente(LEASE_MS)).toBeNull();
+    });
+
+    it('recupera la factura de un proceso que murió, cuando el lease venció', async () => {
+      await encolar({ proximoIntento: new Date(Date.now() - 1000) });
+
+      expect(await repo.claimPendiente(LEASE_MS)).not.toBeNull();
+    });
+
+    it('no toma las que todavía están esperando su backoff', async () => {
+      await encolar({ proximoIntento: new Date(Date.now() + 60_000) });
+
+      expect(await repo.claimPendiente(LEASE_MS)).toBeNull();
+    });
+
+    it('ignora las que ya están emitidas o en error', async () => {
+      await emitir();
+      await emitir({ cae: '', estado: 'error', errorLog: 'CUIT inválido' });
+
+      expect(await repo.claimPendiente(LEASE_MS)).toBeNull();
+    });
+
+    it('marcarEmitida guarda la terna del comprobante y lo saca de la cola', async () => {
+      const invoice = await encolar();
+
+      const emitida = await repo.marcarEmitida(
+        invoice.id,
+        gymId,
+        resultado,
+        new Date('2026-03-11T10:00:00.000Z')
+      );
+
+      expect(emitida).toMatchObject({
+        estado: 'emitida',
+        cae: '75123456789012',
+        numeroComprobante: 42,
+        puntoVenta: 3,
+        codigoTipoComprobante: 11,
+        neto: 15000,
+        iva: 0,
+      });
+      expect(emitida?.vencimientoCae).toEqual(new Date('2026-04-10'));
+      // Fuera de la cola: sin `proximoIntento` ningún claim la vuelve a tomar.
+      expect(emitida?.proximoIntento).toBeUndefined();
+    });
+
+    it('marcarEmitida limpia el error de los intentos previos', async () => {
+      const invoice = await encolar({ errorLog: 'AFIP caído', estado: 'pendiente' });
+
+      const emitida = await repo.marcarEmitida(invoice.id, gymId, resultado, new Date());
+
+      expect(emitida?.errorLog).toBeUndefined();
+    });
+
+    it('marcarEmitida no puede cerrar la factura de otro gym', async () => {
+      const invoice = await encolar();
+
+      expect(await repo.marcarEmitida(invoice.id, otroGymId, resultado, new Date())).toBeNull();
+    });
+
+    it('un fallo transitorio deja la factura de nuevo tomable en su próximo intento', async () => {
+      const invoice = await encolar();
+      await repo.claimPendiente(LEASE_MS);
+
+      await repo.marcarFallo(invoice.id, gymId, {
+        estado: 'pendiente',
+        errorLog: 'AFIP caído',
+        proximoIntento: new Date(Date.now() - 1000),
+      });
+
+      const reintentada = await repo.claimPendiente(LEASE_MS);
+      expect(reintentada?.id).toBe(invoice.id);
+      expect(reintentada?.intentos).toBe(2);
+    });
+
+    it('un fallo definitivo la saca de la cola', async () => {
+      const invoice = await encolar();
+
+      await repo.marcarFallo(invoice.id, gymId, {
+        estado: 'error',
+        errorLog: 'CUIT inválido',
+      });
+
+      const enError = await repo.findById(invoice.id, gymId);
+      expect(enError?.estado).toBe('error');
+      expect(enError?.proximoIntento).toBeUndefined();
+      expect(await repo.claimPendiente(LEASE_MS)).toBeNull();
+    });
+
+    it('el reintento manual la devuelve a la cola', async () => {
+      const invoice = await encolar();
+      await repo.marcarFallo(invoice.id, gymId, { estado: 'error', errorLog: 'CUIT inválido' });
+
+      await repo.update(invoice.id, gymId, {
+        estado: 'pendiente',
+        intentos: 0,
+        proximoIntento: new Date(),
+      });
+
+      const tomada = await repo.claimPendiente(LEASE_MS);
+      expect(tomada?.id).toBe(invoice.id);
+      expect(tomada?.intentos).toBe(1);
+    });
+  });
 });

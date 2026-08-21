@@ -6,6 +6,7 @@ import { DeleteClientUseCase } from '../../../application/use-cases/client/Delet
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
 import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
 import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
+import { RegisterFormSentUseCase } from '../../../application/use-cases/client/RegisterFormSentUseCase';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
@@ -20,6 +21,7 @@ export class ClientController {
     private renewClientUseCase: RenewClientUseCase,
     private updateClientSurveyUseCase: UpdateClientSurveyUseCase,
     private registerFirstContactUseCase: RegisterFirstContactUseCase,
+    private registerFormSentUseCase: RegisterFormSentUseCase,
     private clientRepository: IClientRepository
   ) {}
 
@@ -189,6 +191,36 @@ export class ClientController {
         clientId: id,
         gymId,
         fecha: req.body.fecha
+      });
+
+      res.json({
+        status: 'success',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Registra que se le mandó el formulario de ingreso al socio.
+   *
+   * Sin body: la fecha es siempre el momento del request. A diferencia del primer
+   * contacto no acepta carga retroactiva, porque el envío lo dispara esta misma
+   * pantalla en el momento — no es un dato que se cargue después.
+   */
+  async registerFormSent(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      const result = await this.registerFormSentUseCase.execute({
+        clientId: id,
+        gymId
       });
 
       res.json({

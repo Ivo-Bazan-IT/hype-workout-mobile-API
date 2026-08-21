@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CONDICIONES_FISCALES_CLIENTE } from '../../../domain/billing/types';
 
 // Alta mínima: solo nombre y documento son obligatorios. El resto se completa
 // después con PATCH /api/clients/:id/encuesta. Si no se envían fechas, el caso de
@@ -11,6 +12,10 @@ export const createClientSchema = z.object({
   fechaInicio: z.coerce.date({ invalid_type_error: 'Fecha de inicio inválida' }).optional(),
   fechaVencimiento: z.coerce.date({ invalid_type_error: 'Fecha de vencimiento inválida' }).optional(),
   encuestaData: z.record(z.any()).optional(),
+  // Ausente => CONSUMIDOR_FINAL (default del caso de uso y del schema de Mongo).
+  // Cuando es RESPONSABLE_INSCRIPTO, el caso de uso exige `cuit` válido.
+  condicionFiscal: z.enum(CONDICIONES_FISCALES_CLIENTE as [string, ...string[]]).optional(),
+  cuit: z.string().min(11, 'CUIT debe tener al menos 11 dígitos').optional(),
 });
 
 export const updateClientSchema = z.object({
@@ -21,6 +26,8 @@ export const updateClientSchema = z.object({
   estado: z.enum(['activo', 'inactivo', 'pendiente']).optional(),
   fechaVencimiento: z.coerce.date().optional(),
   encuestaData: z.record(z.any()).optional(),
+  condicionFiscal: z.enum(CONDICIONES_FISCALES_CLIENTE as [string, ...string[]]).optional(),
+  cuit: z.string().min(11, 'CUIT debe tener al menos 11 dígitos').optional(),
 });
 
 // PATCH de la encuesta: `encuestaData` es obligatorio (es el objeto de este endpoint)

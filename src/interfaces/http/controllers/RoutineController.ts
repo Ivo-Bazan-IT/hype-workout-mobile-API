@@ -114,7 +114,7 @@ export class RoutineController {
       const gymId = getTenantId(req);
       const days = parseInt(req.query.days as string) || 7;
 
-      const count = await this.routineRepository.countExpiringByDay(gymId, days);
+      const count = await this.routineRepository.countExpiringWithin(gymId, days);
 
       res.json({
         status: 'success',

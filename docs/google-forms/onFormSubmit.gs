@@ -162,17 +162,17 @@ function enviarAlCrm(config, respuestas, responseId) {
   for (var intento = 1; intento <= MAX_INTENTOS; intento++) {
     var respuesta = UrlFetchApp.fetch(config.url, opciones);
     var codigo = respuesta.getResponseCode();
-    var cuerpo = respuesta.getContentText();
+    var cuerpoRespuesta = respuesta.getContentText();
 
     if (codigo >= 200 && codigo < 300) {
-      Logger.log('✅ Respuestas enviadas al CRM (HTTP ' + codigo + '): ' + cuerpo);
+      Logger.log('✅ Respuestas enviadas al CRM (HTTP ' + codigo + '): ' + cuerpoRespuesta);
       return;
     }
 
     // 4xx (salvo 429) no se reintenta: el problema es del pedido, no del momento.
     // Reintentar un secreto mal cargado o un gym dado de baja solo gasta cuota.
     if (codigo >= 400 && codigo < 500 && codigo !== 429) {
-      throw new Error(explicarError(codigo, cuerpo));
+      throw new Error(explicarError(codigo, cuerpoRespuesta));
     }
 
     // 5xx y 429 sí: el backend puede estar reiniciando o limitando por rate limit.

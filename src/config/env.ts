@@ -9,6 +9,27 @@ const envSchema = z.object({
 
   // Redis eliminado - operaciones sincrónicas
 
+  /*
+   * Quién dispara la emisión de facturas pendientes.
+   *
+   *  - `interno` (default): el `InvoiceEmissionScheduler` tickea dentro del proceso.
+   *    Requiere que el proceso esté SIEMPRE vivo; en un tier que duerme por
+   *    inactividad, el worker se duerme con él y las facturas no salen.
+   *  - `cron`: el proceso no tickea. Un cron externo llama a
+   *    POST /api/internal/jobs/emit-invoices. Sirve en tiers que hibernan y evita
+   *    que dos instancias del server corran dos workers compitiendo por el lease.
+   */
+  INVOICE_WORKER_MODE: z.enum(['interno', 'cron']).default('interno'),
+
+  // Secreto del disparador externo. Sin esto el endpoint responde 503: es un
+  // gatillo de emisión de comprobantes ante AFIP, no puede quedar abierto.
+  INVOICE_CRON_SECRET: z.string().min(32).optional(),
+
+  // Tope de facturas por corrida del cron. Es más alto que el del tick interno
+  // (5) porque el cron corre cada varios minutos, no cada 15 segundos: con el
+  // tope chico, un backlog tardaría horas en drenar.
+  INVOICE_JOB_MAX: z.string().transform(Number).default('50'),
+
   JWT_ACCESS_SECRET: z.string().min(1, 'JWT_ACCESS_SECRET is required'),
   JWT_REFRESH_SECRET: z.string().min(1, 'JWT_REFRESH_SECRET is required'),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
@@ -36,11 +57,54 @@ const envSchema = z.object({
   PDF_TEMPLATE_STORAGE_PATH: z.string().default('./storage/templates'),
   PDF_OUTPUT_STORAGE_PATH: z.string().default('./storage/generated'),
 
-  ARCA_API_BASE_URL: z.string().optional(),
-  ARCA_API_KEY: z.string().optional(),
+  // --- AFIP SDK (facturación electrónica) ---
+  /*
+   * Qué modelo de cuenta factura:
+   *
+   *  - `cuenta_propia` (default): cada gym factura contra SU PROPIA cuenta de
+   *    AFIP SDK (access token + certificado + clave, cargados por el gym en
+   *    `PUT /gyms/settings/afip/credenciales`).
+   *  - `cuenta_unica`: DESCONECTADO. Una sola cuenta de plataforma
+   *    (`AFIP_SDK_API_KEY`) emite para todos los gyms. Se dejó de usar el
+   *    19/08/2026 porque nunca se confirmó con el proveedor si su plan
+   *    soporta varios CUIT bajo una cuenta; el código sigue intacto por si se
+   *    retoma el día que se confirme.
+   */
+  AFIP_BILLING_MODE: z.enum(['cuenta_propia', 'cuenta_unica']).default('cuenta_propia'),
 
-  // AFIP SDK
+  /*
+   * Credencial de la única cuenta de AFIP SDK. Solo se usa en modo
+   * `cuenta_unica` (desconectado); en `cuenta_propia` cada gym trae la suya.
+   *
+   * Sigue siendo `optional()` porque un despliegue que no factura tiene que poder
+   * arrancar sin ella. Su ausencia se paga al emitir, con un error que la nombra.
+   */
   AFIP_SDK_API_KEY: z.string().optional(),
+  // Host de la API REST. Solo se cambia para apuntar a otro gateway o a un mock.
+  // El `preprocess` trata la variable vacía como ausente: en un `.env` lo natural
+  // es dejar `AFIP_SDK_BASE_URL=` sin valor, y `''` no pasa la validación de URL
+  // ni dispara el default, así que sin esto el proceso no arrancaría.
+  AFIP_SDK_BASE_URL: z.preprocess(
+    (valor) => (valor === '' ? undefined : valor),
+    z.string().url().default('https://api.afipsdk.com')
+  ),
+  /*
+   * Contra qué ARCA se factura: `dev` = homologación, `prod` = comprobantes reales.
+   *
+   * OBLIGATORIA y sin default a propósito. Antes se derivaba de NODE_ENV dentro
+   * del adaptador, y eso ponía una decisión fiscal —emitir de verdad o no— en
+   * manos de una variable que se toca por mil motivos ajenos a la facturación.
+   * Un comprobante emitido de más ante ARCA no se borra: se anula con nota de
+   * crédito, que es un trámite fiscal. Que el proceso no arranque hasta que
+   * alguien la escriba es más barato que descubrirlo después.
+   */
+  AFIP_SDK_ENVIRONMENT: z.enum(['dev', 'prod'], {
+    errorMap: () => ({
+      message:
+        "AFIP_SDK_ENVIRONMENT es obligatoria y solo acepta 'dev' (homologación de ARCA) " +
+        "o 'prod' (comprobantes fiscales reales).",
+    }),
+  }),
 
   // Security - Encryption key (32 bytes in hex = 64 chars)
   APP_MASTER_KEY: z.string().length(64).optional(),
@@ -50,6 +114,9 @@ const envSchema = z.object({
   SUPERADMIN_PASSWORD: z.string().optional(),
   SUPERADMIN_NAME: z.string().default('Super Admin'),
 });
+
+/** Se exporta para que los tests validen las reglas del esquema sin reimportar el módulo. */
+export { envSchema };
 
 export type EnvConfig = z.infer<typeof envSchema>;
 
@@ -76,4 +143,40 @@ if (env.DEEPSEEK_BASE_URL && !env.DEEPSEEK_DEFAULT_MODEL) {
 
 if (!env.APP_MASTER_KEY) {
   console.warn('⚠️  Warning: APP_MASTER_KEY no está definida. Las credenciales AFIP no podrán ser encriptadas.');
+}
+
+if (env.AFIP_BILLING_MODE === 'cuenta_unica' && !env.AFIP_SDK_API_KEY) {
+  console.warn(
+    '⚠️  Warning: AFIP_BILLING_MODE=cuenta_unica pero AFIP_SDK_API_KEY no está definida. ' +
+      'Ningún gimnasio va a poder facturar hasta que se cargue.'
+  );
+}
+
+// Los dos cruces peligrosos entre NODE_ENV y el entorno de ARCA. Ninguno se
+// bloquea —hay motivos legítimos para ambos— pero los dos tienen que ser una
+// decisión consciente, no un `.env` mal copiado.
+if (env.AFIP_SDK_ENVIRONMENT === 'prod' && env.NODE_ENV !== 'production') {
+  console.warn(
+    '⚠️  Warning: AFIP_SDK_ENVIRONMENT=prod fuera de producción. Se van a emitir ' +
+      'comprobantes REALES ante ARCA, que no se borran: solo se anulan con nota de crédito.'
+  );
+}
+
+if (env.AFIP_SDK_ENVIRONMENT === 'dev' && env.NODE_ENV === 'production') {
+  console.warn(
+    '⚠️  Warning: AFIP_SDK_ENVIRONMENT=dev en producción. Las facturas van al ' +
+      'homologación de ARCA y NO tienen validez fiscal.'
+  );
+}
+
+// El modo `cron` apaga el worker in-process: si además falta el secreto, el
+// endpoint que lo reemplaza responde 503 y NADIE emite las facturas pendientes.
+// Se queda callado hasta que alguien note que no salió ninguna, así que se avisa
+// fuerte al arrancar.
+if (env.INVOICE_WORKER_MODE === 'cron' && !env.INVOICE_CRON_SECRET) {
+  console.error(
+    '❌ INVOICE_WORKER_MODE=cron pero INVOICE_CRON_SECRET no está definida. ' +
+      'El worker interno está apagado y el endpoint que lo reemplaza va a rechazar todo: ' +
+      'ninguna factura pendiente se va a emitir.'
+  );
 }

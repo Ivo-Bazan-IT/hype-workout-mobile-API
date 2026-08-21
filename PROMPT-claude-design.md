@@ -432,7 +432,7 @@ Son literales exactos. Traducilos para mostrar, pero no inventes estados que no 
 | Rutina      | `estadoEnvio`      | `pendiente` · `enviando` · `enviado` · `error`     |
 | Factura     | `estado`           | `emitida` · `anulada` · `error` · `pendiente`      |
 | Config IA   | `provider`         | `deepseek` · `openai` · `anthropic`                |
-| Config AFIP | `taxCondition`     | `MONOTRIBUTO` · `RESPONSABLE_INSCRIPTO` · `EXENTO` |
+| Config AFIP | `taxCondition`     | `MONOTRIBUTO` · `RESPONSABLE_INSCRIPTO`            |
 | Usuario     | `role`             | `admin` · `gym`                                    |
 
 > **Cuáles aparecen de verdad hoy:** en rutinas, la generación recorre

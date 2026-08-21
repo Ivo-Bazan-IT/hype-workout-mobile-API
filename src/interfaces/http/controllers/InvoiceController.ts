@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { SearchInvoicesUseCase } from '../../../application/use-cases/invoice/SearchInvoicesUseCase';
 import { GetRevenueReportUseCase } from '../../../application/use-cases/invoice/GetRevenueReportUseCase';
+import { RetryInvoiceUseCase } from '../../../application/use-cases/invoice/RetryInvoiceUseCase';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
@@ -10,6 +11,7 @@ export class InvoiceController {
   constructor(
     private searchInvoicesUseCase: SearchInvoicesUseCase,
     private getRevenueReportUseCase: GetRevenueReportUseCase,
+    private retryInvoiceUseCase: RetryInvoiceUseCase,
     private invoiceRepository: IInvoiceRepository
   ) {}
 
@@ -75,6 +77,28 @@ export class InvoiceController {
       res.json({
         status: 'success',
         data: invoice
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Reencola una factura que quedó en error. Responde enseguida con la factura ya
+   * en `pendiente`: la emisión la hace el worker, así que este endpoint no espera a
+   * AFIP ni puede confirmar que el comprobante salió.
+   */
+  async retry(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      const invoice = await this.retryInvoiceUseCase.execute({ invoiceId: id, gymId });
+
+      res.json({
+        status: 'success',
+        data: invoice,
+        message: 'La factura volvió a la cola de emisión.'
       });
     } catch (error) {
       next(error);

@@ -2,6 +2,8 @@ import { IClientRepository } from '../../../domain/repositories/IClientRepositor
 import { IMembershipEventRepository } from '../../../domain/repositories/IMembershipEventRepository';
 import { Client, tieneEncuestaCompleta } from '../../../domain/entities/Client';
 import { ValidationError } from '../../../shared/errors/AppError';
+import { ClientTaxCondition } from '../../../domain/billing/types';
+import { normalizarCuit } from '../../../domain/billing/documentos';
 
 interface CreateClientDTO {
   gymId: string;
@@ -12,6 +14,8 @@ interface CreateClientDTO {
   fechaInicio?: Date;
   fechaVencimiento?: Date;
   encuestaData?: Record<string, any>;
+  condicionFiscal?: ClientTaxCondition;
+  cuit?: string;
 }
 
 const DIAS_MEMBRESIA_POR_DEFECTO = 30;
@@ -34,6 +38,12 @@ export class CreateClientUseCase {
       throw new ValidationError('A client with this documento already exists');
     }
 
+    // Sin CUIT válido, el socio quedaría marcado RI pero facturaría a un DocNro
+    // vacío el día de la primera renovación: se corta acá, no en AFIP.
+    if (dto.condicionFiscal === ClientTaxCondition.RESPONSABLE_INSCRIPTO && normalizarCuit(dto.cuit ?? '') === null) {
+      throw new ValidationError('Un cliente Responsable Inscripto necesita un CUIT válido (11 dígitos)');
+    }
+
     const fechaInicio = dto.fechaInicio || new Date();
 
     let fechaVencimiento = dto.fechaVencimiento;
@@ -53,6 +63,8 @@ export class CreateClientUseCase {
       fechaInicio,
       fechaVencimiento,
       encuestaData: dto.encuestaData,
+      condicionFiscal: dto.condicionFiscal,
+      cuit: dto.cuit,
       // El alta que ya trae encuesta nunca fue un lead: nace convertida. La fecha
       // es la del alta y no `fechaInicio`, que puede venir retroactiva para que la
       // membresía arranque antes — el embudo mide cuándo entró el dato, no desde

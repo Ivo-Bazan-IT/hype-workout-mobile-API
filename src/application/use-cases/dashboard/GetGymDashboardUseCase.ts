@@ -70,11 +70,12 @@ export class GetGymDashboardUseCase {
       this.clientRepository.count(gymId, { ...filtroDeVigencia, esRecurrente: true })
     ]);
 
-    // Rutinas por vencer (7, 5 y 3 días) y las que quedaron sin enviar
+    // Rutinas que vencen DENTRO de 7, 5 y 3 días —los tres contadores se anidan— y
+    // las que quedaron sin enviar.
     const [en7Dias, en5Dias, en3Dias, rutinasSinEnviar] = await Promise.all([
-      this.routineRepository.countExpiringByDay(gymId, 7),
-      this.routineRepository.countExpiringByDay(gymId, 5),
-      this.routineRepository.countExpiringByDay(gymId, 3),
+      this.routineRepository.countExpiringWithin(gymId, 7),
+      this.routineRepository.countExpiringWithin(gymId, 5),
+      this.routineRepository.countExpiringWithin(gymId, 3),
       this.routineRepository.countBySendStatus(gymId, 'pendiente')
     ]);
 

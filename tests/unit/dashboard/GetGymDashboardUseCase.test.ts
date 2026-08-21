@@ -16,7 +16,7 @@ describe('GetGymDashboardUseCase', () => {
     } as any;
 
     const mockRoutineRepo = {
-      countExpiringByDay: async (_gymId: string, days: number) => days === 7 ? 5 : days === 5 ? 3 : 1,
+      countExpiringWithin: async (_gymId: string, days: number) => days === 7 ? 5 : days === 5 ? 3 : 1,
       countBySendStatus: async () => 4
     } as any;
 
@@ -46,7 +46,7 @@ describe('GetGymDashboardUseCase', () => {
   it('cuenta como sin enviar solo las rutinas en estado `pendiente`', async () => {
     const mockClientRepo = { count: vi.fn().mockResolvedValue(0) } as any;
     const mockRoutineRepo = {
-      countExpiringByDay: async () => 0,
+      countExpiringWithin: async () => 0,
       countBySendStatus: vi.fn().mockResolvedValue(2),
     } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: async () => 0 } as any;
@@ -64,7 +64,7 @@ describe('GetGymDashboardUseCase', () => {
   it('un gym sin rutinas trabadas devuelve 0, que acá es un dato real', async () => {
     const mockClientRepo = { count: vi.fn().mockResolvedValue(0) } as any;
     const mockRoutineRepo = {
-      countExpiringByDay: async () => 0,
+      countExpiringWithin: async () => 0,
       countBySendStatus: async () => 0,
     } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: async () => 0 } as any;
@@ -86,7 +86,7 @@ describe('GetGymDashboardUseCase', () => {
     } as any;
 
     const mockRoutineRepo = {
-      countExpiringByDay: async () => 0,
+      countExpiringWithin: async () => 0,
       countBySendStatus: async () => 0
     } as any;
 
@@ -107,7 +107,7 @@ describe('GetGymDashboardUseCase', () => {
 
   it('cuenta en la base en vez de paginar y filtrar en memoria', async () => {
     const mockClientRepo = { count: vi.fn().mockResolvedValue(0), search: vi.fn() } as any;
-    const mockRoutineRepo = { countExpiringByDay: async () => 0, countBySendStatus: async () => 0 } as any;
+    const mockRoutineRepo = { countExpiringWithin: async () => 0, countBySendStatus: async () => 0 } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: async () => 0 } as any;
 
     const useCase = new GetGymDashboardUseCase(mockClientRepo, mockRoutineRepo, mockInvoiceRepo);
@@ -141,7 +141,7 @@ describe('GetGymDashboardUseCase', () => {
       }),
     } as any;
     const mockRoutineRepo = {
-      countExpiringByDay: async () => 0,
+      countExpiringWithin: async () => 0,
       countBySendStatus: async () => 0,
     } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: async () => 0 } as any;
@@ -159,7 +159,7 @@ describe('GetGymDashboardUseCase', () => {
   it('la gracia sale de la constante del dominio, no de un 5 escrito a mano', async () => {
     const mockClientRepo = { count: vi.fn().mockResolvedValue(0) } as any;
     const mockRoutineRepo = {
-      countExpiringByDay: async () => 0,
+      countExpiringWithin: async () => 0,
       countBySendStatus: async () => 0,
     } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: async () => 0 } as any;
@@ -178,7 +178,7 @@ describe('GetGymDashboardUseCase', () => {
 
   it('toma el mes del `now` inyectado y no del reloj del sistema', async () => {
     const mockClientRepo = { count: vi.fn().mockResolvedValue(0) } as any;
-    const mockRoutineRepo = { countExpiringByDay: async () => 0, countBySendStatus: async () => 0 } as any;
+    const mockRoutineRepo = { countExpiringWithin: async () => 0, countBySendStatus: async () => 0 } as any;
     const mockInvoiceRepo = { sumRevenueByMonth: vi.fn().mockResolvedValue(0) } as any;
 
     const useCase = new GetGymDashboardUseCase(mockClientRepo, mockRoutineRepo, mockInvoiceRepo);

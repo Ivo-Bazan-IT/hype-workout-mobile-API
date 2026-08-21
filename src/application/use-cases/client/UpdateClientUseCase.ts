@@ -1,7 +1,9 @@
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import { IMembershipEventRepository } from '../../../domain/repositories/IMembershipEventRepository';
 import { Client, tieneEncuestaCompleta } from '../../../domain/entities/Client';
-import { NotFoundError, ConflictError } from '../../../shared/errors/AppError';
+import { NotFoundError, ConflictError, ValidationError } from '../../../shared/errors/AppError';
+import { ClientTaxCondition } from '../../../domain/billing/types';
+import { normalizarCuit } from '../../../domain/billing/documentos';
 
 interface UpdateClientDTO {
   clientId: string;
@@ -32,6 +34,15 @@ export class UpdateClientUseCase {
       if (clienteConEseDocumento) {
         throw new ConflictError('A client with this documento already exists');
       }
+    }
+
+    // La condición fiscal resultante puede venir de este PUT o de lo que ya tenía
+    // el cliente: se valida el estado final, no solo lo que llegó en el body, para
+    // no dejar pasar un PUT que solo cambia condicionFiscal sin tocar cuit.
+    const condicionFiscalFinal = dto.data.condicionFiscal ?? existingClient.condicionFiscal;
+    const cuitFinal = dto.data.cuit ?? existingClient.cuit;
+    if (condicionFiscalFinal === ClientTaxCondition.RESPONSABLE_INSCRIPTO && normalizarCuit(cuitFinal ?? '') === null) {
+      throw new ValidationError('Un cliente Responsable Inscripto necesita un CUIT válido (11 dígitos)');
     }
 
     // El PUT también puede traer la encuesta, así que también puede ser el momento

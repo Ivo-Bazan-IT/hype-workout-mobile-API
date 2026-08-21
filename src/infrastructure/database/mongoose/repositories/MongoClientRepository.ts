@@ -17,6 +17,8 @@ export class MongoClientRepository implements IClientRepository {
       encuestaData: client.encuestaData,
       fechaConversion: client.fechaConversion,
       fechaPrimerContacto: client.fechaPrimerContacto,
+      condicionFiscal: client.condicionFiscal,
+      cuit: client.cuit,
     });
     return ClientMapper.toDomain(doc);
   }
@@ -112,6 +114,10 @@ export class MongoClientRepository implements IClientRepository {
     if (data.fechaConversion !== undefined) updateData.fechaConversion = data.fechaConversion;
     if (data.fechaPrimerContacto !== undefined)
       updateData.fechaPrimerContacto = data.fechaPrimerContacto;
+    if (data.fechaFormularioEnviado !== undefined)
+      updateData.fechaFormularioEnviado = data.fechaFormularioEnviado;
+    if (data.condicionFiscal !== undefined) updateData.condicionFiscal = data.condicionFiscal;
+    if (data.cuit !== undefined) updateData.cuit = data.cuit;
 
     const doc = await ClientModel.findOneAndUpdate(
       { _id: id, gymId },

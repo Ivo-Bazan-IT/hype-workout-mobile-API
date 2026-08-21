@@ -10,6 +10,7 @@ import { resolverPlantillaPdf } from '../../../domain/pdf/routineTemplate';
 import { IAiUsageRepository } from '../../../domain/repositories/IAiUsageRepository';
 import { AiUsage } from '../../../domain/services/IAIProvider';
 import { renderPromptTemplate } from '../../../domain/prompt/promptTemplate';
+import { calcularVencimientoRutina } from '../../../domain/routine/vigencia';
 import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
 import { calcularCostoEstimado } from '../../../domain/ai/pricing';
 import { CredencialIAResuelta, FuenteCredencialIA } from '../../../domain/ai/credentials';
@@ -58,11 +59,28 @@ export class GenerateRoutineUseCase {
       throw new ValidationError('Client has no survey data. Complete the onboarding form first.');
     }
 
-    // Crear rutina en estado pendiente
+    /*
+     * Un solo instante para toda la generación.
+     *
+     * De acá salen la fecha de generación que se persiste, el vencimiento del plan
+     * y las dos fechas que se imprimen en el PDF. Antes cada una llamaba a
+     * `new Date()` por su cuenta: además de poder discrepar por unos segundos, una
+     * generación que arrancara 23:59 y terminara 00:01 imprimía en el PDF un día
+     * distinto del que quedaba guardado.
+     */
+    const generadaEn = new Date();
+
+    // Crear rutina en estado pendiente.
+    //
+    // El vencimiento es el de la RUTINA —treinta días de planificación— y no el de
+    // la membresía del socio, que es otra fecha y otra pregunta. Ver
+    // `domain/routine/vigencia`.
+    const venceEl = calcularVencimientoRutina(generadaEn);
+
     const routine = await this.routineRepository.create({
       gymId: client.gymId,
       clientId: client.id,
-      fechaVencimiento: client.fechaVencimiento,
+      fechaVencimiento: venceEl,
     });
 
     // Generar rutina sincrónicamente
@@ -130,7 +148,7 @@ export class GenerateRoutineUseCase {
       await this.routineRepository.update(routine.id, gymId, {
         contenidoGenerado: iaResult.contenidoGenerado,
         promptUsado: prompt,
-        fechaGeneracion: new Date()
+        fechaGeneracion: generadaEn
       });
 
       // 4b. Registrar el consumo de IA de este gym. Va acá, apenas responde el
@@ -154,8 +172,11 @@ export class GenerateRoutineUseCase {
         data: {
           clienteNombre: client.nombre,
           gymNombre: gym.name,
-          fechaGeneracion: this.formatearFecha(new Date()),
-          fechaVencimiento: this.formatearFecha(client.fechaVencimiento),
+          fechaGeneracion: this.formatearFecha(generadaEn),
+          // Lo que el PDF le promete al socio es hasta cuándo le sirve ESTE plan.
+          // Imprimir acá el vencimiento de la cuota le daba una fecha que no tenía
+          // nada que ver con la rutina que estaba leyendo.
+          fechaVencimiento: this.formatearFecha(venceEl),
           rutina: iaResult.contenidoGenerado
         },
         fondo: plantilla.fondo

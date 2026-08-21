@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { GenerateRoutineUseCase } from '../../../src/application/use-cases/routine/GenerateRoutineUseCase';
 
 const encuestaData = {
@@ -32,7 +32,7 @@ const buildMocks = (clientOverrides: Record<string, any> = {}) => {
   return {
     generateRoutine,
     routineRepository: {
-      create: vi.fn().mockResolvedValue({ id: 'routine-1' }),
+      create: vi.fn(async (datos: any) => ({ id: 'routine-1', ...datos })),
       update: vi.fn().mockResolvedValue({}),
       updateStatus: vi.fn().mockResolvedValue({}),
     } as any,
@@ -101,6 +101,12 @@ const useCaseConMocks = (m: ReturnType<typeof buildMocks>) =>
   buildUseCase(m).execute('client-1', 'gym-1');
 
 describe('GenerateRoutineUseCase', () => {
+  // Solo algunos tests congelan el reloj; sin esto, el primero que lo haga deja a
+  // los siguientes corriendo con timers falsos y esperando en vano.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renderiza el prompt del gym con los datos del cliente y lo manda a la IA', async () => {
     const mocks = buildMocks();
     const useCase = buildUseCase(mocks);
@@ -254,9 +260,55 @@ describe('GenerateRoutineUseCase', () => {
     expect(params.template.htmlTemplate).toBe('<h1>{{clienteNombre}}</h1>{{rutina}}');
     // El fondo viaja al generador: sin esto el arte del PDF se pierde
     expect(params.fondo).toEqual(Buffer.from('%PDF-standard'));
-    // Fecha en formato es-AR, que es quien lee el PDF
-    expect(params.data.fechaVencimiento).toBe('01/08/2026');
+    // Fecha en formato es-AR, que es quien lee el PDF. El vencimiento es el de la
+    // RUTINA —30 días de planificación— y no el de la cuota del socio, que en este
+    // fixture es el 01/08/2026 y no tiene que aparecer en ningún lado del PDF.
+    expect(params.data.fechaGeneracion).toBe('19/08/2026');
+    expect(params.data.fechaVencimiento).toBe('18/09/2026');
     expect(params.data.gymNombre).toBe('Hype Workout');
+  });
+
+  /*
+   * La planificación es mensual y esa fecha es la que el socio lee en el PDF.
+   *
+   * Antes acá se guardaba `client.fechaVencimiento`, el vencimiento de la CUOTA:
+   * el PDF le prometía al socio una vigencia que no era la de su plan, y el listado
+   * de rutinas por vencer mostraba en realidad vencimientos de membresías. Son dos
+   * preguntas distintas y ninguna de las dos se podía responder.
+   */
+  it('la rutina vence 30 días después de generarse, no cuando vence la cuota', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 19, 10, 0, 0));
+
+    const mocks = buildMocks();
+    await buildUseCase(mocks).execute('client-1', 'gym-1');
+
+    const [creada] = mocks.routineRepository.create.mock.calls[0];
+    expect(creada.fechaVencimiento).toEqual(new Date(2026, 8, 18, 10, 0, 0));
+    // El vencimiento de la membresía del fixture. Que no se cuele de nuevo.
+    expect(creada.fechaVencimiento).not.toEqual(new Date(2026, 7, 1));
+  });
+
+  /*
+   * Una generación que arranque 23:59 y termine 00:01 tiene que dejar la misma
+   * fecha en el PDF y en la base. Antes cada una llamaba a `new Date()` por su
+   * cuenta y podían caer en días distintos.
+   */
+  it('usa el mismo instante para la fecha guardada y la impresa', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 19, 23, 59, 30));
+
+    const mocks = buildMocks();
+    await buildUseCase(mocks).execute('client-1', 'gym-1');
+
+    const persistida = mocks.routineRepository.update.mock.calls
+      .map(([, , datos]: any[]) => datos.fechaGeneracion)
+      .find((fecha: Date | undefined) => fecha !== undefined);
+
+    const [params] = mocks.pdfGenerator.generateFromHtml.mock.calls[0];
+
+    expect(persistida).toEqual(new Date(2026, 7, 19, 23, 59, 30));
+    expect(params.data.fechaGeneracion).toBe('19/08/2026');
   });
 
   it('prefiere la plantilla propia del gym si cargó una', async () => {

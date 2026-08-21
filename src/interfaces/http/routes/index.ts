@@ -9,6 +9,7 @@ import { createInvoiceRoutes } from './invoice.routes';
 import { createAiUsageRoutes } from './aiUsage.routes';
 import { createDashboardRouter } from './dashboard.routes';
 import { createAdminUserRoutes } from './user.routes';
+import { internalRoutes } from './internal.routes';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { requireAdmin } from '../middlewares/roleMiddleware';
@@ -20,6 +21,10 @@ router.use('/auth', authRoutes);
 // Solo el webhook: lo llama Google, que no tiene JWT. El resto de /onboarding se
 // monta más abajo, detrás de la autenticación.
 router.use('/onboarding', onboardingRoutes);
+// Disparadores internos: los llama nuestro cron externo, que tampoco tiene JWT.
+// No es una ruta pública — la protege `internalAuthMiddleware` con un secreto
+// propio— pero sí tiene que quedar fuera del `authMiddleware` de abajo.
+router.use('/internal', internalRoutes);
 
 // Protected routes - require authentication
 router.use(authMiddleware);

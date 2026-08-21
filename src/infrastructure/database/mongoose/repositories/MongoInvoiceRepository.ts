@@ -7,6 +7,7 @@ import {
 } from '../../../../domain/repositories/IInvoiceRepository';
 import { PaginatedResult } from '../../../../domain/repositories/IClientRepository';
 import { Invoice, InvoiceMapper } from '../../../../domain/entities/Invoice';
+import { ResultadoEmision } from '../../../../domain/billing/types';
 import { InvoiceModel, InvoiceDbDocument } from '../schemas/InvoiceSchema';
 import { Types, FilterQuery } from 'mongoose';
 
@@ -16,11 +17,20 @@ export class MongoInvoiceRepository implements IInvoiceRepository {
       gymId: new Types.ObjectId(invoice.gymId),
       clientId: new Types.ObjectId(invoice.clientId),
       tipoComprobante: invoice.tipoComprobante,
-      cae: invoice.cae,
+      codigoTipoComprobante: invoice.codigoTipoComprobante,
+      puntoVenta: invoice.puntoVenta,
+      numeroComprobante: invoice.numeroComprobante,
+      cae: invoice.cae ?? '',
+      vencimientoCae: invoice.vencimientoCae,
       monto: invoice.monto,
+      neto: invoice.neto,
+      iva: invoice.iva,
+      descripcion: invoice.descripcion,
       fechaEmision: invoice.fechaEmision || new Date(),
       estado: invoice.estado || 'pendiente',
-      errorLog: invoice.errorLog
+      errorLog: invoice.errorLog,
+      intentos: invoice.intentos ?? 0,
+      proximoIntento: invoice.proximoIntento ?? new Date()
     });
 
     return InvoiceMapper.toDomain(doc);
@@ -28,6 +38,81 @@ export class MongoInvoiceRepository implements IInvoiceRepository {
 
   async findById(id: string, gymId: string): Promise<Invoice | null> {
     const doc = await InvoiceModel.findOne({ _id: id, gymId });
+    return doc ? InvoiceMapper.toDomain(doc) : null;
+  }
+
+  /**
+   * Reserva atómica: un solo `findOneAndUpdate` busca, marca y devuelve. Mongo
+   * garantiza que dos llamadas concurrentes no se lleven el mismo documento, que es
+   * justo lo que evita emitir dos veces la misma cuota.
+   *
+   * El `$inc` de `intentos` va acá, al TOMAR la factura y no al fallar, para que un
+   * proceso que se muere en medio de la emisión igual gaste su intento: si no, una
+   * factura que hace crashear al worker lo haría reintentar para siempre.
+   */
+  async claimPendiente(leaseMs: number): Promise<Invoice | null> {
+    const ahora = new Date();
+
+    const doc = await InvoiceModel.findOneAndUpdate(
+      { estado: 'pendiente', proximoIntento: { $lte: ahora } },
+      {
+        $inc: { intentos: 1 },
+        $set: { proximoIntento: new Date(ahora.getTime() + leaseMs) }
+      },
+      // La más vieja primero: si algo se atrasó, no queda al fondo para siempre.
+      { new: true, sort: { proximoIntento: 1 } }
+    );
+
+    return doc ? InvoiceMapper.toDomain(doc) : null;
+  }
+
+  async marcarEmitida(
+    id: string,
+    gymId: string,
+    resultado: ResultadoEmision,
+    fechaEmision: Date
+  ): Promise<Invoice | null> {
+    const doc = await InvoiceModel.findOneAndUpdate(
+      { _id: id, gymId },
+      {
+        $set: {
+          estado: 'emitida',
+          cae: resultado.cae,
+          vencimientoCae: resultado.vencimientoCae,
+          numeroComprobante: resultado.numeroComprobante,
+          puntoVenta: resultado.puntoVenta,
+          codigoTipoComprobante: resultado.codigoTipoComprobante,
+          tipoComprobante: resultado.tipoComprobante,
+          neto: resultado.neto,
+          iva: resultado.iva,
+          monto: resultado.importeTotal,
+          fechaEmision
+        },
+        // Sale de la cola y deja de arrastrar el error de los intentos previos: la
+        // factura ya está autorizada y un errorLog viejo solo confunde al que la lee.
+        $unset: { proximoIntento: '', errorLog: '' }
+      },
+      { new: true }
+    );
+
+    return doc ? InvoiceMapper.toDomain(doc) : null;
+  }
+
+  async marcarFallo(
+    id: string,
+    gymId: string,
+    fallo: { estado: 'pendiente' | 'error'; errorLog: string; proximoIntento?: Date }
+  ): Promise<Invoice | null> {
+    const doc = await InvoiceModel.findOneAndUpdate(
+      { _id: id, gymId },
+      fallo.proximoIntento
+        ? { $set: { estado: fallo.estado, errorLog: fallo.errorLog, proximoIntento: fallo.proximoIntento } }
+        : // Sin próximo intento la factura sale de la cola: solo vuelve si alguien
+          // la reencola a mano desde el endpoint de reintento.
+          { $set: { estado: fallo.estado, errorLog: fallo.errorLog }, $unset: { proximoIntento: '' } },
+      { new: true }
+    );
+
     return doc ? InvoiceMapper.toDomain(doc) : null;
   }
 
@@ -56,11 +141,16 @@ export class MongoInvoiceRepository implements IInvoiceRepository {
   }
 
   async update(id: string, gymId: string, data: Partial<Invoice>): Promise<Invoice | null> {
+    // Allowlist explícito. `gymId`, `clientId` y los importes no se tocan por acá:
+    // reasignar una factura de tenant o cambiarle el monto no es una edición, es
+    // adulterar un comprobante fiscal.
     const updateData: Partial<InvoiceDbDocument> = {};
 
     if (data.estado !== undefined) updateData.estado = data.estado;
     if (data.cae !== undefined) updateData.cae = data.cae;
     if (data.errorLog !== undefined) updateData.errorLog = data.errorLog;
+    if (data.intentos !== undefined) updateData.intentos = data.intentos;
+    if (data.proximoIntento !== undefined) updateData.proximoIntento = data.proximoIntento;
 
     const doc = await InvoiceModel.findOneAndUpdate({ _id: id, gymId }, updateData, { new: true });
     return doc ? InvoiceMapper.toDomain(doc) : null;

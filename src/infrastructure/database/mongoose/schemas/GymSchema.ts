@@ -1,4 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
+import { CONDICIONES_FISCALES, GymTaxCondition } from '../../../../domain/billing/types';
 
 export interface GymDocument {
   _id: Types.ObjectId;
@@ -26,6 +27,8 @@ export interface GymDocument {
   };
   googleFormConfig: {
     formId?: string;
+    formUrl?: string;
+    documentoEntryId?: string;
     webhookSecretHash?: string; // bcrypt: solo hay que verificarlo, nunca leerlo
     webhookSecretUpdatedAt?: Date;
     fieldMapping?: {
@@ -42,9 +45,11 @@ export interface GymDocument {
   timezone?: string; // Nombre IANA. Ausente = usar ZONA_HORARIA_DEFAULT
   afipConfig: {
     puntoVenta: number;
-    taxCondition: 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO' | 'EXENTO';
-    apiKeySecretRef: string; // Referencia al secret manager
-    encryptedApiKey?: string; // AES-256-GCM encrypted
+    taxCondition: GymTaxCondition;
+    encryptedApiKey?: string; // AES-256-GCM encrypted (cuenta propia por gym)
+    encryptedCert?: string; // AES-256-GCM encrypted (cuenta propia por gym)
+    encryptedKey?: string; // AES-256-GCM encrypted (cuenta propia por gym)
+    credencialesActualizadasEn?: Date;
     isActive: boolean;
   };
   createdAt: Date;
@@ -83,6 +88,11 @@ const gymSchema = new Schema<GymDocument>({
 
   googleFormConfig: {
     formId: { type: String },
+    // El link que se le manda al socio por WhatsApp y el campo del DNI dentro de ese
+    // link. Juntos son los que hacen posible el formulario prellenado; sin el segundo
+    // el envío sigue andando, pero el socio tipea su documento a mano.
+    formUrl: { type: String },
+    documentoEntryId: { type: String },
     // Hash bcrypt del secreto del webhook. El valor en claro no se guarda en ningún
     // lado: se muestra una sola vez al rotarlo (ver RotateGoogleFormSecretUseCase).
     webhookSecretHash: { type: String },
@@ -110,9 +120,19 @@ const gymSchema = new Schema<GymDocument>({
 
   afipConfig: {
     puntoVenta: { type: Number, default: 1 },
-    taxCondition: { type: String, enum: ['MONOTRIBUTO', 'RESPONSABLE_INSCRIPTO', 'EXENTO'], default: 'MONOTRIBUTO' },
-    apiKeySecretRef: { type: String, default: '' },
-    encryptedApiKey: { type: String }, // AES-256-GCM encrypted
+    taxCondition: {
+      type: String,
+      // La lista sale del dominio: agregar una condición fiscal en dos lugares es
+      // la forma segura de que el enum de Mongo y el del negocio se separen.
+      enum: CONDICIONES_FISCALES,
+      default: GymTaxCondition.MONOTRIBUTO
+    },
+    // Credencial de la cuenta PROPIA de AFIP SDK del gym (modo `cuenta_propia`).
+    // Se cargan por PUT /gyms/settings/afip/credenciales, nunca en este PUT.
+    encryptedApiKey: { type: String },
+    encryptedCert: { type: String },
+    encryptedKey: { type: String },
+    credencialesActualizadasEn: { type: Date },
     isActive: { type: Boolean, default: false }
   },
 }, { timestamps: true });

@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { GymController } from '../controllers/GymController';
 import { CreateGymUseCase } from '../../../application/use-cases/gym/CreateGymUseCase';
 import { UpdateGymUseCase } from '../../../application/use-cases/gym/UpdateGymUseCase';
 import { DeleteGymUseCase } from '../../../application/use-cases/gym/DeleteGymUseCase';
 import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseCase';
 import { UpdateAfipConfigUseCase } from '../../../application/use-cases/gym/UpdateAfipConfigUseCase';
+import { UpdateAfipCredentialsUseCase } from '../../../application/use-cases/gym/UpdateAfipCredentialsUseCase';
 import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/UpdateAiConfigUseCase';
 import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
 import { UpdateGoogleFormConfigUseCase } from '../../../application/use-cases/gym/UpdateGoogleFormConfigUseCase';
@@ -15,11 +17,19 @@ import { EncryptionService } from '../../../infrastructure/encryption/Encryption
 import { BcryptWebhookSecretService } from '../../../infrastructure/encryption/BcryptWebhookSecretService';
 import { Gym } from '../../../domain/entities/Gym';
 import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
-import { createGymSchema, updateGymSchema, updateAfipConfigSchema, updateAiConfigSchema, updateWhatsappConfigSchema, updateGoogleFormConfigSchema } from '../validators/gym.validator';
+import {
+  createGymSchema,
+  updateGymSchema,
+  updateAfipConfigSchema,
+  updateAfipCredentialsSchema,
+  updateAiConfigSchema,
+  updateWhatsappConfigSchema,
+  updateGoogleFormConfigSchema,
+} from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
-import { NotFoundError } from '../../../shared/errors/AppError';
+import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 
 const createAdminGymRouter = () => {
   const router = Router();
@@ -101,10 +111,30 @@ const toSafeWhatsappConfig = (gym: Gym) => ({
   hasAccessToken: Boolean(gym.whatsappConfig?.encryptedAccessToken),
 });
 
+// Igual criterio que aiConfig/whatsappConfig: nunca se devuelve el ciphertext, solo
+// si cada credencial de la cuenta propia (modo `cuenta_propia`) ya está cargada. El
+// CUIT no viaja acá: vive en la raíz del Gym, no dentro de `afipConfig`.
+const toSafeAfipConfig = (gym: Gym) =>
+  gym.afipConfig
+    ? {
+        puntoVenta: gym.afipConfig.puntoVenta,
+        taxCondition: gym.afipConfig.taxCondition,
+        isActive: gym.afipConfig.isActive,
+        hasApiKey: Boolean(gym.afipConfig.encryptedApiKey),
+        hasCert: Boolean(gym.afipConfig.encryptedCert),
+        hasKey: Boolean(gym.afipConfig.encryptedKey),
+        credencialesActualizadasEn: gym.afipConfig.credencialesActualizadasEn ?? null,
+      }
+    : undefined;
+
 // El hash del secreto tampoco se expone: al front le alcanza con saber si ya hay uno
 // y de cuándo es, para poder ofrecer la rotación.
 const toSafeGoogleFormConfig = (gym: Gym) => ({
   formId: gym.googleFormConfig?.formId ?? null,
+  // El front los necesita para armar el link que se le manda al socio, y no son
+  // secretos: el formulario es público por definición.
+  formUrl: gym.googleFormConfig?.formUrl ?? null,
+  documentoEntryId: gym.googleFormConfig?.documentoEntryId ?? null,
   hasWebhookSecret: Boolean(gym.googleFormConfig?.webhookSecretHash),
   webhookSecretUpdatedAt: gym.googleFormConfig?.webhookSecretUpdatedAt ?? null,
   // No es sensible y el front lo necesita para mostrar qué preguntas están fijadas
@@ -118,7 +148,8 @@ const createUserGymRouter = () => {
   const gymRepository = new MongoGymRepository();
   const encryptionService = new EncryptionService();
 
-  const updateAfipConfigUseCase = new UpdateAfipConfigUseCase(gymRepository, encryptionService);
+  const updateAfipConfigUseCase = new UpdateAfipConfigUseCase(gymRepository);
+  const updateAfipCredentialsUseCase = new UpdateAfipCredentialsUseCase(gymRepository, encryptionService);
   const updateAiConfigUseCase = new UpdateAiConfigUseCase(gymRepository, encryptionService);
   const updateWhatsappConfigUseCase = new UpdateWhatsappConfigUseCase(
     gymRepository,
@@ -141,7 +172,7 @@ const createUserGymRouter = () => {
 
       // Allowlist explícito: solo campos no sensibles. Nunca exponer secretos
       // (whatsappConfig.tokenSecretRef/encryptedAccessToken, aiConfig.encryptedApiKey,
-      // afipConfig.encryptedApiKey/apiKeySecretRef, googleFormConfig.webhookSecretHash).
+      // googleFormConfig.webhookSecretHash). `afipConfig` ya no guarda secretos.
       const safeGym = {
         id: gym.id,
         name: gym.name,
@@ -156,13 +187,7 @@ const createUserGymRouter = () => {
         // Se mantiene el campo plano por compatibilidad con el front actual
         whatsappPhoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,
         googleFormConfig: toSafeGoogleFormConfig(gym),
-        afipConfig: gym.afipConfig
-          ? {
-              puntoVenta: gym.afipConfig.puntoVenta,
-              taxCondition: gym.afipConfig.taxCondition,
-              isActive: gym.afipConfig.isActive,
-            }
-          : undefined,
+        afipConfig: toSafeAfipConfig(gym),
         createdAt: gym.createdAt,
         updatedAt: gym.updatedAt,
       };
@@ -268,20 +293,61 @@ const createUserGymRouter = () => {
           ...req.body,
         });
 
-        // No exponer el secreto: solo los campos AFIP no sensibles
-        const afip = updatedGym.afipConfig;
         res.json({
           status: 'success',
           data: {
-            afipConfig: afip
-              ? {
-                  puntoVenta: afip.puntoVenta,
-                  taxCondition: afip.taxCondition,
-                  isActive: afip.isActive,
-                }
-              : undefined,
+            // El CUIT viaja al lado de la config aunque viva en la raíz del gym: es
+            // parte de lo que se edita en esta pantalla, y el front necesita poder
+            // releerlo después de guardarlo.
+            cuit: updatedGym.cuit,
+            afipConfig: toSafeAfipConfig(updatedGym),
           },
         });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  /**
+   * Carga o rota la credencial de la cuenta PROPIA de AFIP SDK del gym: access
+   * token (texto) + certificado + clave privada (archivos). Multipart porque
+   * `.crt`/`.key` son archivos, no un campo de un JSON.
+   *
+   * Memoria y no disco: son archivos PEM de pocos KB, y así no queda un archivo
+   * en claro tirado en el filesystem del server ni un paso extra de limpieza.
+   * `fileSize` acota el abuso — un .crt/.key real nunca se acerca a ese tamaño.
+   */
+  const afipCredentialsUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 64 * 1024 },
+  });
+
+  router.put(
+    '/settings/afip/credenciales',
+    afipCredentialsUpload.fields([
+      { name: 'cert', maxCount: 1 },
+      { name: 'key', maxCount: 1 },
+    ]),
+    validateBody(updateAfipCredentialsSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const files = (req.files ?? {}) as Record<string, Express.Multer.File[] | undefined>;
+        const cert = files.cert?.[0];
+        const key = files.key?.[0];
+
+        if (req.body.apiKey === undefined && !cert && !key) {
+          throw new ValidationError('Hay que enviar al menos una credencial (apiKey, cert o key)');
+        }
+
+        const updatedGym = await updateAfipCredentialsUseCase.execute({
+          gymId: getTenantId(req),
+          apiKey: req.body.apiKey,
+          cert: cert?.buffer.toString('utf8'),
+          key: key?.buffer.toString('utf8'),
+        });
+
+        res.json({ status: 'success', data: { afipConfig: toSafeAfipConfig(updatedGym) } });
       } catch (error) {
         next(error);
       }

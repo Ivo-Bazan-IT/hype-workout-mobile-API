@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { ClientTaxCondition } from '../billing/types';
 
 export type ClientStatus = 'activo' | 'inactivo' | 'pendiente';
 
@@ -41,6 +42,34 @@ export interface Client {
    * `POST /api/clients/:id/contacto` y, como el nombre indica, solo la primera vez.
    */
   fechaPrimerContacto?: Date;
+  /**
+   * Cuándo se le mandó al socio el formulario de ingreso por WhatsApp.
+   *
+   * Es el paso que faltaba entre el alta y la encuesta: sin este sello, el listado
+   * no puede distinguir "todavía no le mandé nada" de "se lo mandé y estoy esperando
+   * que conteste", que son dos situaciones con acciones distintas.
+   *
+   * A diferencia de `fechaPrimerContacto`, **se pisa en cada reenvío**: acá la
+   * pregunta es "¿cuándo fue la última vez que le insistí?" y no "¿cuándo fue la
+   * primera?". La primera vez que se manda, además, sella el primer contacto — porque
+   * mandarle el formulario ES contactarlo.
+   *
+   * Marca cuándo el CRM disparó el envío, no cuándo el socio recibió el mensaje: el
+   * mensaje lo termina de mandar una persona desde su WhatsApp, y de ese lado el
+   * sistema no ve nada.
+   */
+  fechaFormularioEnviado?: Date;
+  /**
+   * Condición fiscal del socio ante AFIP. Decide, junto con la condición del
+   * gimnasio, qué comprobante le corresponde (`domain/billing/types.resolverComprobante`):
+   * Responsable Inscripto factura A a su CUIT, cualquier otro caso factura B o C
+   * a su DNI. `undefined` en los clientes cargados antes de este campo se trata
+   * como `CONSUMIDOR_FINAL` — es la condición de la enorme mayoría de los socios,
+   * y no se le puede preguntar a un dato que no existe.
+   */
+  condicionFiscal?: ClientTaxCondition;
+  /** CUIT del socio. Solo hace falta (y se exige) cuando es Responsable Inscripto. */
+  cuit?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +106,9 @@ export class ClientEntity implements Client {
     public encuestaData?: Record<string, any>,
     public fechaConversion?: Date,
     public fechaPrimerContacto?: Date,
+    public fechaFormularioEnviado?: Date,
+    public condicionFiscal?: ClientTaxCondition,
+    public cuit?: string,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -99,6 +131,9 @@ export class ClientMapper {
       doc.encuestaData,
       doc.fechaConversion,
       doc.fechaPrimerContacto,
+      doc.fechaFormularioEnviado,
+      doc.condicionFiscal,
+      doc.cuit,
       doc.createdAt,
       doc.updatedAt
     );
@@ -120,6 +155,9 @@ export class ClientMapper {
       encuestaData: entity.encuestaData,
       fechaConversion: entity.fechaConversion,
       fechaPrimerContacto: entity.fechaPrimerContacto,
+      fechaFormularioEnviado: entity.fechaFormularioEnviado,
+      condicionFiscal: entity.condicionFiscal,
+      cuit: entity.cuit,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

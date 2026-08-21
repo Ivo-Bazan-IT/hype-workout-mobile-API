@@ -29,5 +29,19 @@ export interface IGymSecretsRepository {
     preferido: AiProvider,
     modelPreferido?: string
   ): Promise<CredencialIAResuelta | null>;
-  getAfipApiKey(gymId: string): Promise<string | null>;
+  /**
+   * Credencial de la cuenta ÚNICA de AFIP SDK (modo `cuenta_unica`, desconectado
+   * por ahora — ver `AFIP_BILLING_MODE`). No lleva `gymId`: la cuenta con el
+   * proveedor es única para toda la plataforma.
+   */
+  getAfipApiKey(): Promise<string | null>;
+  /**
+   * Credenciales de la cuenta PROPIA de AFIP SDK de un gym (modo `cuenta_propia`,
+   * activo por default): access token + certificado + clave privada, las tres
+   * cifradas en `Gym.afipConfig`. `null` si el gym no cargó ninguna todavía, o si
+   * cargó solo alguna de las tres — sin las tres completas no se puede facturar.
+   */
+  getAfipCredentials(
+    gymId: string
+  ): Promise<{ accessToken: string; cert: string; key: string } | null>;
 }

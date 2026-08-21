@@ -160,4 +160,51 @@ describe('Facturación del gym (e2e)', () => {
   it('exige autenticación', async () => {
     await request(app).get('/api/invoices').expect(401);
   });
+
+  describe('POST /api/invoices/:id/retry', () => {
+    const enError = (overrides: Record<string, any> = {}) =>
+      emitir({ estado: 'error', cae: '', errorLog: 'CUIT inválido', intentos: 5, ...overrides });
+
+    it('devuelve a la cola una factura que quedó en error', async () => {
+      const invoice = await enError();
+
+      const res = await asGym(request(app).post(`/api/invoices/${invoice.id}/retry`)).expect(200);
+
+      expect(res.body.data.estado).toBe('pendiente');
+      expect(res.body.data.intentos).toBe(0);
+
+      // Y queda efectivamente tomable por el worker
+      expect(await repo.claimPendiente(60_000)).not.toBeNull();
+    });
+
+    it('no reintenta una factura ya emitida', async () => {
+      const invoice = await emitir({ estado: 'emitida' });
+
+      const res = await asGym(request(app).post(`/api/invoices/${invoice.id}/retry`)).expect(400);
+
+      expect(res.body.message).toContain('estado error');
+    });
+
+    it('no deja reintentar el comprobante de otro gym', async () => {
+      const invoice = await enError();
+
+      const otroGymToken = jwt.sign(
+        { userId: 'user-2', email: 'otro@gym.com', role: 'gym', gymId: otroGymId },
+        env.JWT_ACCESS_SECRET
+      );
+      await request(app)
+        .post(`/api/invoices/${invoice.id}/retry`)
+        .set('Authorization', `Bearer ${otroGymToken}`)
+        .expect(404);
+
+      // Y la factura sigue intacta, sin volver a la cola
+      expect((await repo.findById(invoice.id, gymId))?.estado).toBe('error');
+    });
+
+    it('exige autenticación', async () => {
+      const invoice = await enError();
+
+      await request(app).post(`/api/invoices/${invoice.id}/retry`).expect(401);
+    });
+  });
 });

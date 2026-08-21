@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
 import { SearchInvoicesUseCase } from '../../../application/use-cases/invoice/SearchInvoicesUseCase';
 import { GetRevenueReportUseCase } from '../../../application/use-cases/invoice/GetRevenueReportUseCase';
+import { RetryInvoiceUseCase } from '../../../application/use-cases/invoice/RetryInvoiceUseCase';
 import { InvoiceController } from '../controllers/InvoiceController';
 import { searchInvoicesSchema, revenueReportSchema } from '../validators/invoice.validator';
 import { z } from 'zod';
@@ -28,10 +29,12 @@ export const createInvoiceRoutes = () => {
   // Casos de uso: reciben solo puertos
   const searchInvoicesUseCase = new SearchInvoicesUseCase(invoiceRepository);
   const getRevenueReportUseCase = new GetRevenueReportUseCase(invoiceRepository);
+  const retryInvoiceUseCase = new RetryInvoiceUseCase(invoiceRepository);
 
   const invoiceController = new InvoiceController(
     searchInvoicesUseCase,
     getRevenueReportUseCase,
+    retryInvoiceUseCase,
     invoiceRepository
   );
 
@@ -50,6 +53,12 @@ export const createInvoiceRoutes = () => {
   // GET /api/invoices/:id - Detalle de un comprobante
   router.get('/:id', (req, res, next) =>
     invoiceController.get(req as AuthenticatedRequest, res, next)
+  );
+
+  // POST /api/invoices/:id/retry - Reencolar un comprobante que quedó en error.
+  // POST y no PUT porque no es idempotente: cada llamada arranca un intento nuevo.
+  router.post('/:id/retry', (req, res, next) =>
+    invoiceController.retry(req as AuthenticatedRequest, res, next)
   );
 
   return router;

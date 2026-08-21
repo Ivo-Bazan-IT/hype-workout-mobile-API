@@ -4,6 +4,7 @@
  * el mantenimiento al escalar la cantidad de rutinas generadas.
  */
 import { FormFieldMapping } from '../forms/fieldMapping';
+import { GymTaxCondition } from '../billing/types';
 
 export const AI_PROVIDERS = ['deepseek', 'openai', 'anthropic'] as const;
 
@@ -56,6 +57,28 @@ export interface PdfTemplate {
 export interface GoogleFormConfig {
   formId?: string;
   /**
+   * URL del formulario tal como la abre el socio (`.../viewform`).
+   *
+   * Convive con `formId` en vez de derivarse de él: el id identifica al Form para
+   * nosotros, pero el link que se le manda al socio es el PUBLICADO, que en los
+   * formularios con respuestas anónimas lleva otro id (`/forms/d/e/…`). Armar uno
+   * a partir del otro no siempre da una URL que abra, así que se guarda la que el
+   * gimnasio copió de su propio formulario.
+   */
+  formUrl?: string;
+  /**
+   * Id del campo del documento dentro del Form (`entry.1234567890`).
+   *
+   * Es lo que permite mandarle al socio el formulario **con su DNI ya cargado**, y
+   * con eso desaparece el rebote más común de la integración: el socio que tipea
+   * mal su documento y hace que la respuesta no encuentre ninguna ficha.
+   *
+   * Sale del "vínculo prellenado" que genera Google y no hay forma de deducirlo. Si
+   * falta, el envío sigue funcionando: se manda el formulario pelado y el socio
+   * escribe el documento a mano.
+   */
+  documentoEntryId?: string;
+  /**
    * Qué pregunta del Form alimenta cada campo del cliente. Sin esto se cae a una
    * heurística por alias que puede equivocarse de pregunta. Ver
    * `domain/forms/fieldMapping`.
@@ -79,9 +102,31 @@ export interface GoogleFormConfig {
 
 export interface AfipConfig {
   puntoVenta: number;
-  taxCondition: 'MONOTRIBUTO' | 'RESPONSABLE_INSCRIPTO' | 'EXENTO';
-  apiKeySecretRef: string; // Referencia a secret manager externo (AWS, Doppler, etc.)
-  encryptedApiKey?: string;  // API key encriptada con AES-256-GCM
+  /**
+   * Solo MONOTRIBUTO o RESPONSABLE_INSCRIPTO: son las dos condiciones con fines de
+   * lucro y las únicas que este producto factura. El tipo sale de
+   * `domain/billing/types` para que la condición fiscal se declare en un solo lado.
+   */
+  taxCondition: GymTaxCondition;
+  /**
+   * Credencial de la cuenta PROPIA de AFIP SDK del gimnasio (modo `cuenta_propia`,
+   * ver `AFIP_BILLING_MODE`). Cada gym factura contra su propia cuenta, así que
+   * necesita las tres cosas, cifradas con AES-256-GCM igual que
+   * `aiConfig.encryptedApiKey` / `whatsappConfig.encryptedAccessToken`: NUNCA se
+   * exponen por HTTP.
+   *
+   * Existieron antes de la migración del 19/08/2026 a cuenta única, que las purgó
+   * (`scripts/purge-afip-gym-keys.ts`). Al volver a cuenta propia, todo gym con
+   * `isActive: true` necesita recargarlas por `PUT /gyms/settings/afip/credenciales`
+   * antes de poder emitir: no hay forma de recuperar lo que se purgó.
+   */
+  encryptedApiKey?: string;
+  /** Contenido del archivo .crt del gym, cifrado. */
+  encryptedCert?: string;
+  /** Contenido del archivo .key del gym, cifrado. */
+  encryptedKey?: string;
+  /** Última vez que se cargó o rotó alguna de las tres credenciales de arriba. */
+  credencialesActualizadasEn?: Date;
   isActive: boolean;
 }
 

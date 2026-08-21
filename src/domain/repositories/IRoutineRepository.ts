@@ -45,8 +45,19 @@ export interface IRoutineRepository {
   ): Promise<PaginatedResult<RoutineListItem>>;
   update(id: string, gymId: string, data: Partial<Routine>): Promise<Routine | null>;
   updateStatus(id: string, gymId: string, estadoGeneracion: RoutineGenerationStatus, estadoEnvio?: RoutineSendStatus): Promise<Routine | null>;
-  getExpiringSoon(gymId: string, days: number): Promise<Routine[]>;
-  countExpiringByDay(gymId: string, days: number): Promise<number>;
+  /**
+   * Cuántas rutinas del gym vencen **dentro de los próximos `days` días**, contando
+   * desde el arranque de hoy: es acumulativo, no el conteo de un día suelto.
+   *
+   * Antes era `countExpiringByDay` y contaba las que vencían exactamente el día
+   * `days`-ésimo. Con eso, una rutina que vencía en 4 días no aparecía en ninguno de
+   * los tres contadores del dashboard (7, 5 y 3) y `en7Dias` no incluía a `en3Dias`:
+   * la tarjeta no acumulaba, que es justo lo que un aviso de vencimientos promete.
+   *
+   * El piso es el arranque de hoy y no `now`: una rutina que venció esta mañana
+   * sigue siendo la que hay que renovar hoy, no una que ya no importa.
+   */
+  countExpiringWithin(gymId: string, days: number): Promise<number>;
 
   /**
    * Cuántas rutinas del gym están en un estado de envío dado.

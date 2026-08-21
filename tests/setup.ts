@@ -15,6 +15,15 @@ process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret';
 // 32 bytes en hex: sin esto, cualquier test que cifre credenciales de un gym
 // explota con CRITICAL_SECURITY_ERROR antes de llegar a la aserción.
 process.env.APP_MASTER_KEY ??= 'a'.repeat(64);
+// Sin secreto, el disparador interno responde 503 y el e2e no podría distinguir
+// "cerrado por config" de "cerrado por credencial mala". El mínimo son 32 chars.
+process.env.INVOICE_CRON_SECRET ??= 'test-internal-cron-secret-de-32-chars';
+// Obligatoria en el esquema y sin default: emitir contra ARCA de verdad o contra
+// homologación es una decisión explícita. En los tests, siempre homologación.
+process.env.AFIP_SDK_ENVIRONMENT ??= 'dev';
+// La cuenta de AFIP SDK es única y de la plataforma: sin esta variable ningún gym
+// puede facturar y los e2e de facturación fallan por config, no por su asunto.
+process.env.AFIP_SDK_API_KEY ??= 'afip-sdk-key-de-plataforma-para-tests';
 
 beforeAll(async () => {
   // Mongo en memoria: los tests corren offline, sin depender de un MongoDB local.

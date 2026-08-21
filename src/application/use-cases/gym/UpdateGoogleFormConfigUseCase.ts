@@ -6,6 +6,9 @@ import { NotFoundError } from '../../../shared/errors/AppError';
 interface UpdateGoogleFormConfigDTO {
   gymId: string;
   formId?: string;
+  /** Link publicado del Form y campo del DNI adentro de ese link. Ver `GoogleFormConfig`. */
+  formUrl?: string;
+  documentoEntryId?: string;
   fieldMapping?: FormFieldMapping;
 }
 
@@ -30,6 +33,10 @@ export class UpdateGoogleFormConfigUseCase {
       googleFormConfig: {
         ...(gym.googleFormConfig || {}),
         ...(dto.formId !== undefined && { formId: dto.formId }),
+        ...(dto.formUrl !== undefined && { formUrl: dto.formUrl }),
+        ...(dto.documentoEntryId !== undefined && {
+          documentoEntryId: dto.documentoEntryId,
+        }),
         // El mapeo también hace merge campo por campo: mandar solo `telefono` no
         // puede borrar el `nombre` que ya estaba corregido.
         ...(dto.fieldMapping !== undefined && {

@@ -1,11 +1,8 @@
 import { Router } from 'express';
 import { MongoClientRepository } from '../../../infrastructure/database/mongoose/repositories/MongoClientRepository';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
-import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
-import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
 import { MongoMembershipEventRepository } from '../../../infrastructure/database/mongoose/repositories/MongoMembershipEventRepository';
-import { AfipSdkAdapterFactory } from '../../../infrastructure/external/billing/AfipSdkAdapterFactory';
 import { CreateClientUseCase } from '../../../application/use-cases/client/CreateClientUseCase';
 import { SearchClientsUseCase } from '../../../application/use-cases/client/SearchClientsUseCase';
 import { UpdateClientUseCase } from '../../../application/use-cases/client/UpdateClientUseCase';
@@ -13,6 +10,7 @@ import { DeleteClientUseCase } from '../../../application/use-cases/client/Delet
 import { RenewClientUseCase } from '../../../application/use-cases/client/RenewClientUseCase';
 import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
 import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
+import { RegisterFormSentUseCase } from '../../../application/use-cases/client/RegisterFormSentUseCase';
 import { ClientController } from '../controllers/ClientController';
 import { createClientSchema, updateClientSchema, updateClientSurveySchema } from '../validators/client.validator';
 import { registerFirstContactSchema, renewClientSchema } from '../validators/client.validator';
@@ -48,26 +46,25 @@ export const createClientRoutes = () => {
 
   const clientRepository = new MongoClientRepository();
   const gymRepository = new MongoGymRepository();
-  const gymSecretsRepo = new MongoGymSecretsRepository(new EncryptionService());
   const invoiceRepository = new MongoInvoiceRepository();
-  const invoiceProviderFactory = new AfipSdkAdapterFactory();
   const membershipEventRepository = new MongoMembershipEventRepository();
 
   const createClientUseCase = new CreateClientUseCase(clientRepository, membershipEventRepository);
   const searchClientsUseCase = new SearchClientsUseCase(clientRepository);
   const updateClientUseCase = new UpdateClientUseCase(clientRepository, membershipEventRepository);
   const deleteClientUseCase = new DeleteClientUseCase(clientRepository);
+  // Renovar ya no necesita las credenciales de AFIP ni el proveedor de facturación:
+  // solo deja el comprobante encolado. Quien los usa es el worker de emisión.
   const renewClientUseCase = new RenewClientUseCase(
     clientRepository,
     gymRepository,
-    gymSecretsRepo,
     invoiceRepository,
-    invoiceProviderFactory,
     membershipEventRepository
   );
 
   const updateClientSurveyUseCase = new UpdateClientSurveyUseCase(clientRepository);
   const registerFirstContactUseCase = new RegisterFirstContactUseCase(clientRepository);
+  const registerFormSentUseCase = new RegisterFormSentUseCase(clientRepository);
 
   const clientController = new ClientController(
     createClientUseCase,
@@ -77,6 +74,7 @@ export const createClientRoutes = () => {
     renewClientUseCase,
     updateClientSurveyUseCase,
     registerFirstContactUseCase,
+    registerFormSentUseCase,
     clientRepository
   );
 
@@ -124,6 +122,13 @@ export const createClientRoutes = () => {
   // Idempotente: repetirlo NO corre la fecha original (ver el caso de uso).
   router.post('/:id/contacto', validateBody(registerFirstContactSchema), (req, res, next) =>
     clientController.registerFirstContact(req as AuthenticatedRequest, res, next)
+  );
+
+  // POST /api/clients/:id/formulario-enviado - Registrar que se le mandó el
+  // formulario de ingreso por WhatsApp. Sin body: la fecha es siempre ahora, y a
+  // diferencia del contacto se PISA en cada reenvío (ver el caso de uso).
+  router.post('/:id/formulario-enviado', (req, res, next) =>
+    clientController.registerFormSent(req as AuthenticatedRequest, res, next)
   );
 
   // DELETE /api/clients/:id - Eliminar cliente (soft delete)

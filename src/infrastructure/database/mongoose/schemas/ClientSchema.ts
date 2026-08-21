@@ -1,4 +1,5 @@
 import { Schema, model, Types } from 'mongoose';
+import { CONDICIONES_FISCALES_CLIENTE, ClientTaxCondition } from '../../../../domain/billing/types';
 
 export interface ClientDocument {
   _id: Types.ObjectId;
@@ -15,6 +16,9 @@ export interface ClientDocument {
   encuestaData?: Record<string, any>;
   fechaConversion?: Date;
   fechaPrimerContacto?: Date;
+  fechaFormularioEnviado?: Date;
+  condicionFiscal?: ClientTaxCondition;
+  cuit?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +42,18 @@ const clientSchema = new Schema<ClientDocument>({
   // KPI los trata como convertidos sin imputarlos a ningún período.
   fechaConversion: { type: Date },
   fechaPrimerContacto: { type: Date },
+  // Último envío del formulario de ingreso al socio. Sin índice a propósito: se lee
+  // siempre junto con la ficha que ya se trajo, nunca como filtro de búsqueda.
+  fechaFormularioEnviado: { type: Date },
+  // Ausente en clientes cargados antes de este campo: el dominio lo trata como
+  // CONSUMIDOR_FINAL (default explícito acá para que quede igual en Mongo).
+  condicionFiscal: {
+    type: String,
+    enum: CONDICIONES_FISCALES_CLIENTE,
+    default: ClientTaxCondition.CONSUMIDOR_FINAL
+  },
+  // Solo se completa (y se exige en el use case) cuando condicionFiscal es RI.
+  cuit: { type: String },
 }, { timestamps: true });
 
 // Índices clave para el buscador (nombre + documento)

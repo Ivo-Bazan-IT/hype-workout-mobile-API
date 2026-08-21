@@ -68,19 +68,42 @@ export class MongoGymSecretsRepository implements IGymSecretsRepository {
     });
   }
 
-  async getAfipApiKey(gymId: string): Promise<string | null> {
-    const gym = await GymModel.findById(gymId);
-
-    if (!gym || !gym.afipConfig?.isActive) {
-      return process.env.AFIP_SDK_API_KEY || null;
-    }
-
-    const encrypted = gym.afipConfig.encryptedApiKey;
-    if (encrypted) {
-      return this.decryptOrThrow(encrypted, gymId, 'AFIP API key');
-    }
-
+  /**
+   * La cuenta de AFIP SDK es única y de la plataforma: no se consulta al gym.
+   *
+   * Antes esto priorizaba una key cifrada por gimnasio, y eso mezclaba dos cosas
+   * distintas: la cuenta con el proveedor del SDK (que se paga y se cuotea una
+   * sola vez) y la identidad fiscal del emisor (CUIT y punto de venta, que sí son
+   * de cada gym y siguen viviendo en `afipConfig`). Con la key por gym, cualquier
+   * dueño podía cargar una credencial suya —o pegar cualquier cosa— y romperse la
+   * facturación solo, sin que la plataforma se enterara.
+   */
+  async getAfipApiKey(): Promise<string | null> {
     return process.env.AFIP_SDK_API_KEY || null;
+  }
+
+  /**
+   * Las tres credenciales son independientes entre sí (se pueden cargar de a
+   * una), pero para facturar hacen falta las tres juntas: sin cert o sin key no
+   * hay con qué autenticarse contra AFIP aunque el access token sea válido. Por
+   * eso esto devuelve `null` en vez de un objeto a medio completar — quien llama
+   * no tiene que volver a chequear cuál de los tres faltó.
+   */
+  async getAfipCredentials(
+    gymId: string
+  ): Promise<{ accessToken: string; cert: string; key: string } | null> {
+    const gym = await GymModel.findById(gymId);
+    const afip = gym?.afipConfig;
+
+    if (!afip?.encryptedApiKey || !afip.encryptedCert || !afip.encryptedKey) {
+      return null;
+    }
+
+    return {
+      accessToken: this.decryptOrThrow(afip.encryptedApiKey, gymId, 'AFIP SDK access token'),
+      cert: this.decryptOrThrow(afip.encryptedCert, gymId, 'AFIP SDK certificate'),
+      key: this.decryptOrThrow(afip.encryptedKey, gymId, 'AFIP SDK private key')
+    };
   }
 
   private platformAiApiKey(provider: AiProvider): string | null {

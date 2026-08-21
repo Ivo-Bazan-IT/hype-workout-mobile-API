@@ -4,7 +4,12 @@
     "noEmit": true,
     "rootDir": ".",
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    // Solo acá (nunca en tsconfig.json, que compila el build real a CommonJS):
+    // algunos tests e2e usan top-level await para controlar variables de
+    // entorno / mocks antes de que `config/env` se parsee al importarse.
+    // Vitest ya lo soporta vía esbuild; esto solo alinea `tsc --noEmit`.
+    "module": "es2022"
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]

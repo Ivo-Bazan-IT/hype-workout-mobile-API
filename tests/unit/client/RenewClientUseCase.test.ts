@@ -1,37 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { RenewClientUseCase } from '../../../src/application/use-cases/client/RenewClientUseCase';
+import { GymTaxCondition } from '../../../src/domain/billing/types';
 import { ValidationError, NotFoundError } from '../../../src/shared/errors/AppError';
-
-// Mock invoiceQueue before importing the use case
-vi.mock('../../../src/infrastructure/queues/routineQueue', () => ({
-  invoiceQueue: {
-    add: vi.fn().mockResolvedValue({}),
-  },
-}));
 
 // Construye el juego completo de dependencias que el caso de uso espera.
 // gymRepository devuelve por defecto un gym sin afipConfig activo, de modo que
 // la rama de facturación AFIP se saltea y el test se enfoca en la renovación.
-function makeDeps(clientRepoOverrides: Record<string, unknown> = {}) {
+function makeDeps(
+  clientRepoOverrides: Record<string, unknown> = {},
+  gym: Record<string, unknown> = { id: 'gym-123', afipConfig: undefined }
+) {
   const clientRepository = {
     findById: vi.fn(),
     update: vi.fn(),
     ...clientRepoOverrides,
   } as any;
   const gymRepository = {
-    findById: vi.fn().mockResolvedValue({ id: 'gym-123', afipConfig: undefined }),
-  } as any;
-  const gymSecretsRepo = {
-    getAfipApiKey: vi.fn().mockResolvedValue(null),
+    findById: vi.fn().mockResolvedValue(gym),
   } as any;
   const invoiceRepository = {
     create: vi.fn().mockResolvedValue({}),
-  } as any;
-  // Fábrica de facturación: por defecto el gym no tiene AFIP activo, así que no se invoca.
-  const invoiceProviderFactory = {
-    create: vi.fn().mockReturnValue({
-      emitInvoice: vi.fn().mockResolvedValue({ cae: 'CAE-TEST' }),
-    }),
   } as any;
   const membershipEventRepository = {
     create: vi.fn().mockResolvedValue({}),
@@ -39,25 +27,34 @@ function makeDeps(clientRepoOverrides: Record<string, unknown> = {}) {
   return {
     clientRepository,
     gymRepository,
-    gymSecretsRepo,
     invoiceRepository,
-    invoiceProviderFactory,
     membershipEventRepository,
   };
 }
 
-function build(clientRepoOverrides: Record<string, unknown> = {}) {
-  const deps = makeDeps(clientRepoOverrides);
+function build(
+  clientRepoOverrides: Record<string, unknown> = {},
+  gym?: Record<string, unknown>
+) {
+  const deps = makeDeps(clientRepoOverrides, gym);
   const useCase = new RenewClientUseCase(
     deps.clientRepository,
     deps.gymRepository,
-    deps.gymSecretsRepo,
     deps.invoiceRepository,
-    deps.invoiceProviderFactory,
     deps.membershipEventRepository
   );
   return { useCase, deps };
 }
+
+/** Socio de referencia, ya renovado alguna vez o no según el historial. */
+const socio = (extra: Record<string, unknown> = {}) => ({
+  id: 'client-123',
+  gymId: 'gym-123',
+  historialRenovaciones: [],
+  estado: 'activo',
+  documento: '12345678',
+  ...extra,
+});
 
 function makeUseCase(clientRepoOverrides: Record<string, unknown> = {}) {
   return build(clientRepoOverrides).useCase;
@@ -204,5 +201,101 @@ describe('RenewClientUseCase', () => {
     // Si cada uno llamara a `new Date()` por su cuenta, el stream y el historial
     // quedarían desfasados y dejarían de reconciliar.
     expect(fechaDelEvento).toBe(fechaDelHistorial);
+  });
+
+  describe('facturación', () => {
+    const gymConAfip = (taxCondition: GymTaxCondition) => ({
+      id: 'gym-123',
+      cuit: '20-12345678-9',
+      afipConfig: { isActive: true, puntoVenta: 3, taxCondition },
+    });
+
+    const renovar = (useCase: RenewClientUseCase) =>
+      useCase.execute({
+        clientId: 'client-123',
+        gymId: 'gym-123',
+        monto: 15000,
+        nuevaFechaVencimiento: new Date('2026-04-01T00:00:00.000Z'),
+      });
+
+    it('no encola ninguna factura si el gym no tiene AFIP activo', async () => {
+      const { useCase, deps } = build({
+        findById: vi.fn().mockResolvedValue(socio()),
+        update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+      });
+
+      await renovar(useCase);
+
+      expect(deps.invoiceRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('deja la factura en pendiente, sin esperar a AFIP', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConAfip(GymTaxCondition.MONOTRIBUTO)
+      );
+
+      await renovar(useCase);
+
+      expect(deps.invoiceRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          gymId: 'gym-123',
+          clientId: 'client-123',
+          monto: 15000,
+          estado: 'pendiente',
+        })
+      );
+    });
+
+    it('un gym monotributista encola una Factura C', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConAfip(GymTaxCondition.MONOTRIBUTO)
+      );
+
+      await renovar(useCase);
+
+      expect(deps.invoiceRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tipoComprobante: 'Factura C', codigoTipoComprobante: 11 })
+      );
+    });
+
+    it('un gym responsable inscripto encola una Factura B, nunca una A', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConAfip(GymTaxCondition.RESPONSABLE_INSCRIPTO)
+      );
+
+      await renovar(useCase);
+
+      expect(deps.invoiceRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tipoComprobante: 'Factura B', codigoTipoComprobante: 6 })
+      );
+    });
+
+    it('si falla el encolado, la renovación igual queda hecha', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConAfip(GymTaxCondition.MONOTRIBUTO)
+      );
+      deps.invoiceRepository.create.mockRejectedValue(new Error('mongo caído'));
+
+      const result = await renovar(useCase);
+
+      expect(result.estado).toBe('activo');
+      expect(result.fechaVencimiento).toEqual(new Date('2026-04-01T00:00:00.000Z'));
+    });
   });
 });

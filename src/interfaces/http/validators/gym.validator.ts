@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AI_PROVIDERS } from '../../../domain/entities/Gym';
+import { GymTaxCondition } from '../../../domain/billing/types';
 import { esZonaHorariaValida } from '../../../domain/time/zonaHoraria';
 
 /**
@@ -91,6 +92,24 @@ export const updateWhatsappConfigSchema = z
 export const updateGoogleFormConfigSchema = z
   .object({
     formId: z.string().min(1, 'Form ID cannot be empty').optional(),
+    // Link publicado del formulario: es el que se le manda al socio por WhatsApp.
+    // Se exige que sea de Google para que un error de copiado no termine mandándole
+    // a un socio real una URL cualquiera desde el número del gimnasio.
+    formUrl: z
+      .string()
+      .url('formUrl must be a valid URL')
+      .refine((url) => /^https:\/\/docs\.google\.com\/forms\//.test(url), {
+        message: 'formUrl must be a Google Forms link (https://docs.google.com/forms/…)',
+      })
+      .optional(),
+    // Tal como lo escribe Google en el vínculo prellenado. Se valida el formato
+    // porque un valor inventado no rompe nada visible: el Form abre igual, ignora el
+    // parámetro desconocido y el socio recibe el formulario vacío sin que nadie se
+    // entere de que el prellenado dejó de funcionar.
+    documentoEntryId: z
+      .string()
+      .regex(/^entry\.\d+$/, 'documentoEntryId must look like entry.1234567890')
+      .optional(),
     // Título EXACTO de la pregunta del Form que alimenta cada campo del cliente.
     // Se puede fijar solo el que la heurística resuelve mal; los omitidos conservan
     // lo que ya estaba configurado.
@@ -114,10 +133,23 @@ export const updateGoogleFormConfigSchema = z
   });
 
 export const updateAfipConfigSchema = z.object({
-  apiKey: z.string().min(1).optional(),
+  // Mismo criterio que el alta del gym: el CUIT también se puede corregir desde la
+  // pantalla de facturación, que es donde el dueño lo necesita.
+  cuit: z.string().min(11, 'CUIT must be at least 11 characters').optional(),
+  // Sin `apiKey`/`cert`/`key` a propósito: en modo `cuenta_propia` esas credenciales
+  // se cargan por PUT /gyms/settings/afip/credenciales (multipart), no acá. Este
+  // endpoint es solo identidad fiscal. Un front viejo que las siga mandando acá no
+  // rompe —`validateBody` reemplaza el body por el parseado— pero se descartan.
   puntoVenta: z.number().int().positive().optional(),
-  taxCondition: z.enum(['MONOTRIBUTO', 'RESPONSABLE_INSCRIPTO', 'EXENTO']).optional(),
+  taxCondition: z.nativeEnum(GymTaxCondition).optional(),
   isActive: z.boolean().optional(),
+});
+
+// El `apiKey` viaja como texto en el mismo multipart que `cert`/`key` (archivos,
+// los procesa multer y no Zod). Al menos uno de los tres tiene que venir; esa
+// regla la valida el caso de uso, que es quien sabe cuáles tres llegaron juntos.
+export const updateAfipCredentialsSchema = z.object({
+  apiKey: z.string().min(1, 'API key no puede estar vacía').optional(),
 });
 
 export const loginSchema = z.object({

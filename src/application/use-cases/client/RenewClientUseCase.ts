@@ -1,11 +1,10 @@
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
-import { IGymRepository, IGymSecretsRepository } from '../../../domain/repositories/IGymRepository';
+import { IGymRepository } from '../../../domain/repositories/IGymRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IMembershipEventRepository } from '../../../domain/repositories/IMembershipEventRepository';
-import { IInvoiceProviderFactory } from '../../../domain/services/IInvoiceProviderFactory';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 import { Client } from '../../../domain/entities/Client';
-import { GymTaxCondition } from '../../../domain/billing/types';
+import { ClientTaxCondition, resolverComprobante } from '../../../domain/billing/types';
 
 interface RenewClientDTO {
   clientId: string;
@@ -18,9 +17,7 @@ export class RenewClientUseCase {
   constructor(
     private clientRepository: IClientRepository,
     private gymRepository: IGymRepository,
-    private gymSecretsRepo: IGymSecretsRepository,
     private invoiceRepository: IInvoiceRepository,
-    private invoiceProviderFactory: IInvoiceProviderFactory,
     private membershipEventRepository: IMembershipEventRepository
   ) {}
 
@@ -73,55 +70,40 @@ export class RenewClientUseCase {
       origen: 'operacion'
     });
 
-    // Generar factura sincrónicamente (con manejo de errores)
+    // Encolar la factura. Acá NO se habla con AFIP: se deja el comprobante en
+    // `pendiente` y lo emite el worker por su cuenta. Antes esta llamada era
+    // sincrónica y el socio esperaba en la ventanilla hasta 15 segundos —el timeout
+    // del adaptador— para que le renovaran la cuota, aunque la renovación en sí ya
+    // estuviera hecha y guardada.
     try {
       const gym = await this.gymRepository.findById(dto.gymId);
 
-      if (gym && gym.afipConfig?.isActive) {
-        const afipApiKey = await this.gymSecretsRepo.getAfipApiKey(dto.gymId);
+      if (gym?.afipConfig?.isActive) {
+        // El comprobante sale de `resolverComprobante`, que mira DOS condiciones:
+        // la del gym (decide si hay Factura C sin más vuelta) y la del socio (decide
+        // entre A y B cuando el gym es Responsable Inscripto). Es solo la vista
+        // "pendiente": el valor que de verdad queda en el comprobante es el que
+        // devuelve AFIP al emitir, en `marcarEmitida`.
+        const comprobante = resolverComprobante(
+          gym.afipConfig.taxCondition,
+          existingClient.condicionFiscal ?? ClientTaxCondition.CONSUMIDOR_FINAL
+        );
 
-        if (afipApiKey) {
-          const invoiceProvider = this.invoiceProviderFactory.create({
-            tenantId: dto.gymId,
-            cuit: parseInt(gym.cuit),
-            puntoVenta: gym.afipConfig.puntoVenta,
-            taxCondition: gym.afipConfig.taxCondition as GymTaxCondition,
-            afipSdkApiKey: afipApiKey
-          });
-
-          const result = await invoiceProvider.emitInvoice({
-            amount: dto.monto,
-            clientDocument: parseInt(existingClient.documento),
-            isConsumidorFinal: true,
-            description: `Cuota Mensual - ${new Date().toLocaleDateString('es-AR', { month: 'long' })}`
-          });
-
-          // Persistir factura emitida
-          await this.invoiceRepository.create({
-            gymId: dto.gymId,
-            clientId: dto.clientId,
-            tipoComprobante: gym.afipConfig.taxCondition === 'MONOTRIBUTO' ? 'Factura C' : 'Factura B',
-            cae: result.cae,
-            monto: dto.monto,
-            estado: 'emitida'
-          });
-
-          console.log(`✅ Invoice generated for client ${dto.clientId} - CAE: ${result.cae}`);
-        }
+        await this.invoiceRepository.create({
+          gymId: dto.gymId,
+          clientId: dto.clientId,
+          tipoComprobante: comprobante.nombre,
+          codigoTipoComprobante: comprobante.codigo,
+          monto: dto.monto,
+          descripcion: `Cuota Mensual - ${fechaRenovacion.toLocaleDateString('es-AR', { month: 'long' })}`,
+          estado: 'pendiente'
+        });
       }
     } catch (error: any) {
-      console.error('❌ Invoice generation error:', error);
-
-      // Persistir error pero no fallar la renovación
-      await this.invoiceRepository.create({
-        gymId: dto.gymId,
-        clientId: dto.clientId,
-        tipoComprobante: 'Factura C',
-        cae: '',
-        monto: dto.monto,
-        estado: 'error',
-        errorLog: error.message
-      });
+      // Lo único que puede fallar acá es la base. La renovación ya está registrada
+      // y el evento también, así que se deja constancia y se sigue: dejar al socio
+      // sin renovar por un problema de facturación sería el peor de los dos males.
+      console.error('❌ No se pudo encolar la factura de la renovación:', error);
     }
 
     return clienteActualizado!;

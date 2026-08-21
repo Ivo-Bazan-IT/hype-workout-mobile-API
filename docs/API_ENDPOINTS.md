@@ -266,7 +266,11 @@ de WhatsApp, ni la API key de IA, ni la de AFIP, ni el hash del secreto del webh
     "afipConfig": {
       "puntoVenta": "number",
       "taxCondition": "string",
-      "isActive": "boolean"
+      "isActive": "boolean",
+      "hasApiKey": "boolean",
+      "hasCert": "boolean",
+      "hasKey": "boolean",
+      "credencialesActualizadasEn": "ISO instante | null"
     },
     "createdAt": "ISO instante",
     "updatedAt": "ISO instante"
@@ -294,13 +298,47 @@ Devuelve `{ whatsappConfig: { phoneNumberId, hasAccessToken } }`.
 
 ### `PUT /gyms/settings/afip`
 
-Devuelve `{ afipConfig: { puntoVenta, taxCondition, isActive } | undefined }`.
+Body: `{ cuit?, puntoVenta?, taxCondition?, isActive? }`, todos opcionales.
+
+Devuelve `{ cuit, afipConfig }` con la misma forma segura de `GET /gyms/settings`.
+
+- Es solo **identidad fiscal**: quién factura, con qué punto de venta y bajo qué régimen.
+  La credencial de AFIP SDK (cuenta propia del gym) se carga aparte, por
+  `PUT /gyms/settings/afip/credenciales`. Un cliente viejo que mande `apiKey` acá no
+  rompe —se descarta en la validación— pero tampoco se guarda.
+- **`taxCondition` solo admite `MONOTRIBUTO` o `RESPONSABLE_INSCRIPTO`.** `EXENTO` ya no
+  existe: el producto se vende a entidades con fines de lucro. Mandarlo da `400`.
+- **`cuit`** es el del gimnasio **emisor** — a nombre de quién sale la factura, no el del
+  socio. Se acepta con guiones o puntos; el backend lo normaliza. Vive en la raíz del gym
+  (`GET /gyms/settings` → `data.cuit`) y se puede editar desde acá porque es donde el dueño
+  lo necesita. `409` si otro gimnasio ya lo usa.
+
+Se pueden mandar todos juntos: `{ cuit, puntoVenta, taxCondition, isActive: true }` en una
+sola llamada deja la identidad fiscal configurada, pero **no alcanza para facturar**: sin
+la credencial de `PUT /gyms/settings/afip/credenciales`, la primera emisión queda en
+`error` con un mensaje que lo explica.
+
+### `PUT /gyms/settings/afip/credenciales`
+
+**`multipart/form-data`**, no JSON: `apiKey` como campo de texto (el access token de
+`app.afipsdk.com`), `cert` y `key` como archivos (el `.crt` y el `.key` que entrega AFIP
+para ese CUIT). Los tres son opcionales — se puede rotar uno solo — pero hace falta mandar
+al menos uno.
+
+Devuelve `{ afipConfig }`, igual que arriba: nunca el contenido de las credenciales, solo
+`hasApiKey` / `hasCert` / `hasKey` / `credencialesActualizadasEn`.
+
+Cada gimnasio factura contra **su propia cuenta** de AFIP SDK (no hay cuenta compartida de
+plataforma): sin las tres credenciales cargadas, ninguna factura de ese gym sale de
+`pendiente`.
 
 ### `PUT /gyms/settings/google-form`
 
 ```json
 {
   "formId": "string (opcional)",
+  "formUrl": "string (opcional)",
+  "documentoEntryId": "string (opcional)",
   "fieldMapping": {
     "nombre": "string", "documento": "string", "telefono": "string", "email": "string",
     "edad": "string", "objetivo": "string", "lesiones": "string", "diasPorSemana": "string"
@@ -312,6 +350,18 @@ Las ocho claves son opcionales. Los valores son el **título exacto de la pregun
 Form que alimenta cada campo. `nombre`, `documento`, `telefono` y `email` alimentan
 columnas de la ficha; `edad`, `objetivo`, `lesiones` y `diasPorSemana` alimentan
 placeholders del prompt.
+
+`formUrl` y `documentoEntryId` son los que permiten **mandarle al socio el formulario
+con su documento ya cargado**, que es lo que evita el rebote por DNI mal tipeado:
+
+| Campo | Qué es | Validación |
+|---|---|---|
+| `formUrl` | El link publicado del Form, el que abre el socio | Tiene que empezar con `https://docs.google.com/forms/` |
+| `documentoEntryId` | El campo del DNI dentro de ese link | Formato `entry.1234567890` |
+
+Los dos salen del **vínculo prellenado** que genera Google (⋮ → Obtener vínculo
+prellenado). Sin `documentoEntryId` el envío sigue funcionando: se manda el formulario
+pelado y el socio tipea el documento a mano.
 
 ⚠️ **El merge no sabe borrar.** Se mergea campo por campo, así que **vaciar una pregunta
 no borra el mapeo**: el merge no puede expresar un borrado. Un body vacío `{}` devuelve
@@ -366,10 +416,16 @@ Devuelve `PaginatedResult<Client>` — recordar el anidado de §1.1.
   "encuestaData": { },
   "fechaConversion": "ISO instante | undefined",
   "fechaPrimerContacto": "ISO instante | undefined",
+  "condicionFiscal": "RESPONSABLE_INSCRIPTO | CONSUMIDOR_FINAL | undefined",
+  "cuit": "string | undefined",
   "createdAt": "ISO instante",
   "updatedAt": "ISO instante"
 }
 ```
+
+`condicionFiscal` ausente se trata como `CONSUMIDOR_FINAL` (es la condición de la enorme
+mayoría de los socios). Decide, junto con la condición fiscal del gimnasio, qué comprobante
+le corresponde al renovar — ver §10. `cuit` solo hace falta cuando es `RESPONSABLE_INSCRIPTO`.
 
 ⚠️ **`estado: 'inactivo'` es borrado lógico, no una baja del gimnasio.** El front lo
 rotula "Eliminado" y no lo cuenta como churn. Quién está activo de verdad lo decide
@@ -406,16 +462,22 @@ El cliente. `404` si no existe **o es de otro gimnasio**.
   "email": "string (email, opcional)",
   "fechaInicio": "ISO (opcional)",
   "fechaVencimiento": "ISO (opcional)",
-  "encuestaData": { }
+  "encuestaData": { },
+  "condicionFiscal": "RESPONSABLE_INSCRIPTO | CONSUMIDOR_FINAL (opcional)",
+  "cuit": "string, mín 11 caracteres (opcional)"
 }
 ```
 
-Sin fechas se aplica el default de 30 días. Responde `201`.
+Sin fechas se aplica el default de 30 días. Responde `201`. `400` si `condicionFiscal` es
+`RESPONSABLE_INSCRIPTO` y `cuit` no viene o no tiene 11 dígitos.
 
 ### `PUT /clients/:id`
 
 Todos los campos opcionales: `nombre`, `documento`, `telefono`, `email`, `estado`,
-`fechaVencimiento`, `encuestaData`.
+`fechaVencimiento`, `encuestaData`, `condicionFiscal`, `cuit`. Misma validación de CUIT que
+el alta, evaluada sobre el estado **final** del cliente (lo que llega en este PUT más lo que
+ya tenía) — un PUT que solo cambia `condicionFiscal` a `RESPONSABLE_INSCRIPTO` sin `cuit`
+también da `400` si el cliente no tenía uno cargado antes.
 
 ### `PATCH /clients/:id/encuesta`
 
@@ -451,6 +513,28 @@ administrativa en vez de la comercial.
 |---|---|
 | `fecha` futura | `400` — daría un tiempo de respuesta negativo |
 | `fecha` anterior al `createdAt` del cliente | `400` — mediría contra un lead que no existía |
+| Cliente de otro gym | `404` |
+
+### `POST /clients/:id/formulario-enviado`
+
+Sin body. Registra que se le mandó al socio el **formulario de ingreso** por WhatsApp y
+devuelve la ficha actualizada.
+
+El mensaje **no sale del backend**: lo dispara una persona desde su propio WhatsApp con
+un link `wa.me`, porque la Cloud API de Meta no deja escribirle primero a alguien que no
+escribió antes salvo con una plantilla aprobada. Este endpoint asienta la acción del
+operador, no la entrega del mensaje.
+
+Escribe dos fechas con reglas distintas:
+
+| Campo | Comportamiento |
+|---|---|
+| `fechaFormularioEnviado` | **Se pisa en cada llamada.** Contesta "¿cuándo le insistí por última vez?" |
+| `fechaPrimerContacto` | **Solo si estaba vacío.** Mandarle el formulario ES el primer contacto, y el KPI mide el primero |
+
+| Caso | Respuesta |
+|---|---|
+| Socio sin `telefono` | `400` — no hay a dónde mandarlo, y el sello mentiría |
 | Cliente de otro gym | `404` |
 
 ### `POST /clients/:id/renew`
@@ -582,6 +666,24 @@ Los filtros trabajan **sobre el gimnasio entero**, no sobre una página. El rang
 vencimiento es semiabierto. Orden: más reciente primero. `clientNombre` en `null` es
 socio borrado, igual que en `/checkins`.
 
+#### ⚠️ `fechaVencimiento` es el de la RUTINA, no el de la cuota
+
+La planificación es **mensual**: una rutina generada el día X vence el día **X+30**, y
+la invariante `fechaVencimiento = fechaGeneracion + 30 días` vale siempre. Es hasta
+cuándo le sirve al socio *ese plan de entrenamiento*.
+
+**No es** `client.fechaVencimiento`, que dice hasta cuándo pagó la cuota. Son dos
+preguntas distintas y se mueven por separado: un socio que renueva a mitad de mes sigue
+con la misma rutina hasta que esta venza, y uno que dejó de pagar conserva una rutina
+vigente que ya nadie va a usar.
+
+> 📌 **Cambió el 19-08.** Hasta esa fecha el campo guardaba el vencimiento de la
+> membresía, así que una pantalla de "rutinas por vencer" mostraba en realidad
+> vencimientos de cuotas. El campo, su tipo y su lugar en el JSON no cambiaron —**solo
+> el valor**—, así que el front no rompe, pero cualquier texto que diga "vence la
+> membresía" al lado de este dato ahora miente. Las rutinas viejas se corrigen en la
+> base con `npm run backfill:vencimiento-rutinas`.
+
 ### `GET /routines/:id`
 
 La rutina. `404` si es de otro gimnasio.
@@ -593,6 +695,18 @@ Array de rutinas del socio, más reciente primero.
 ### `GET /routines/expiring?days=7`
 
 `{ "count": number, "days": number }`.
+
+Cuántas rutinas vencen **dentro de los próximos `days` días**, contando desde el arranque
+de hoy. Es acumulativo: `days=7` incluye a las que vencen mañana.
+
+Una rutina que venció hoy más temprano **sí** cuenta —sigue siendo la que hay que renovar
+hoy—; una que venció ayer, no.
+
+Para ver las filas y no solo el número, `GET /routines?vencimientoDesde=…&vencimientoHasta=…`.
+
+> 📌 **Cambió el 19-08.** Antes contaba las que vencían *exactamente* el día `days`-ésimo,
+> así que una rutina a 4 días no aparecía con `days=7`, `days=5` ni `days=3`. El número que
+> devuelve ahora es mayor o igual al de antes.
 
 ### `GET /routines/:id/pdf`
 
@@ -649,6 +763,16 @@ cierra.
 
 `rutinasSinEnviar` son las generadas que nunca salieron hacia el socio. **Acá un `0` SÍ
 es un dato real** —"no hay ninguna trabada"— y por eso va como número y no como `null`.
+
+**`rutinasPorVencer` es acumulativo y los tres contadores se anidan**: `en3Dias ⊆ en5Dias ⊆
+en7Dias`. Cada uno cuenta las rutinas que vencen entre hoy y dentro de esos días, así que
+ninguna queda fuera de los tres. La fecha que miran es el vencimiento de la **rutina**
+—30 días desde que se generó—, no el de la cuota del socio; ver §8.
+
+> 📌 **Cambió el 19-08** en dos frentes a la vez: los contadores pasaron de "el día N
+> exacto" a "dentro de N días", y el dato que leen pasó de ser el vencimiento de la
+> membresía al de la rutina. Los tres números van a subir respecto de lo que el front
+> venía mostrando. Las rutinas viejas se corrigen con `npm run backfill:vencimiento-rutinas`.
 
 ⚠️ **`ingresos` sale de las facturas AFIP y hoy casi siempre da `$0`**, porque la mayoría
 de los gyms no tiene facturación activa. El ingreso real —el de las renovaciones— está en
@@ -829,16 +953,47 @@ Devuelve `PaginatedResult<Invoice>`:
   "id": "string",
   "gymId": "string",
   "clientId": "string",
-  "tipoComprobante": "string",
+  "tipoComprobante": "Factura A | Factura B | Factura C",
+  "codigoTipoComprobante": "number | undefined (1 | 6 | 11)",
+  "puntoVenta": "number | undefined",
+  "numeroComprobante": "number | undefined",
   "cae": "string",
-  "monto": "number (PESOS)",
+  "vencimientoCae": "ISO instante | undefined",
+  "monto": "number (PESOS, total con IVA)",
+  "neto": "number | undefined",
+  "iva": "number | undefined",
+  "descripcion": "string | undefined",
   "fechaEmision": "ISO instante",
   "estado": "emitida | anulada | error | pendiente",
   "errorLog": "string | undefined",
+  "intentos": "number",
+  "proximoIntento": "ISO instante | undefined",
   "createdAt": "ISO instante",
   "updatedAt": "ISO instante"
 }
 ```
+
+**Los campos fiscales son `undefined` mientras el comprobante no esté emitido.** Una factura
+nace en `pendiente`, sin CAE ni número: los completa el worker al obtener la autorización.
+Un comprobante queda identificado ante AFIP por la terna
+`puntoVenta` + `codigoTipoComprobante` + `numeroComprobante`; el CAE solo lo autoriza.
+
+**El tipo de comprobante depende de DOS condiciones fiscales: la del gimnasio y la del
+socio** (`Client.condicionFiscal`, `RESPONSABLE_INSCRIPTO | CONSUMIDOR_FINAL`, default
+`CONSUMIDOR_FINAL`):
+
+- Gym `MONOTRIBUTO` → siempre **Factura C** (código 11, sin IVA discriminado), sin mirar
+  al socio.
+- Gym `RESPONSABLE_INSCRIPTO` + socio `RESPONSABLE_INSCRIPTO` → **Factura A** (código 1),
+  facturada al **CUIT** del socio (`Client.cuit`), no a su DNI.
+- Gym `RESPONSABLE_INSCRIPTO` + socio `CONSUMIDOR_FINAL` → **Factura B** (código 6), con el
+  IVA desagregado del precio en `neto`/`iva`.
+
+Un socio marcado `RESPONSABLE_INSCRIPTO` sin `cuit` válido no se puede facturar: la factura
+queda en `error` hasta que se cargue.
+
+`monto` es el total con IVA incluido y es lo que suman los reportes de ingresos. En
+monotributo `neto === monto` e `iva === 0`.
 
 ⚠️ **Los filtros de fecha se llaman `emitidaDesde` / `emitidaHasta`.** Mandar
 `desde`/`hasta` no filtra nada y **no avisa**: Zod descarta las claves desconocidas.
@@ -852,9 +1007,51 @@ backend.
 Query: `gymId?`, `desde?`, `hasta?`. Devuelve el reporte con desglose mensual:
 `{ desde, hasta, total, cantidad, porMes: [{ year, month, total, cantidad }] }`.
 
+Solo cuenta las `emitida`. Las `pendiente` todavía no son plata cobrada ante AFIP y las
+`error` quedan persistidas para auditoría, no para sumar.
+
 ### `GET /invoices/:id`
 
 El comprobante. `404` si es de otro gimnasio.
+
+### `POST /invoices/:id/retry`
+
+Devuelve a la cola de emisión una factura que quedó en `error`. Responde `200` con la
+factura ya en `pendiente` (`intentos` en `0`) y el mensaje
+`"La factura volvió a la cola de emisión."`.
+
+- `400` si la factura **no** está en `error`. Reencolar una `emitida` la facturaría dos
+  veces; una `pendiente` ya está en la cola.
+- `404` si es de otro gimnasio.
+
+**No espera a AFIP.** El `200` confirma que la factura volvió a la cola, no que el
+comprobante salió: la emisión la hace el worker unos segundos después. Para saber cómo
+terminó hay que releer la factura.
+
+### Ciclo de vida de una factura
+
+```
+renovación del socio ──> pendiente ──emite OK──> emitida
+                             │  ▲
+                             │  └── reintento automático (fallo transitorio, hasta 5)
+                             │  └── POST /invoices/:id/retry (fallo de validación, manual)
+                             └──fallo definitivo──> error
+```
+
+**La renovación de un socio no espera a AFIP.** `POST /clients/:id/renew` deja el
+comprobante en `pendiente` y responde; un worker in-process lo emite después. Consecuencias
+para el front:
+
+- Después de renovar, la factura **existe pero todavía no tiene CAE**. Si la pantalla lo
+  muestra, tiene que contemplar el estado `pendiente`.
+- Que la renovación devuelva `200` **no significa que se facturó**. Son dos cosas
+  distintas a propósito: la mayoría de los gyms no tiene facturación activa, y un problema
+  con AFIP nunca debe dejar al socio sin renovar.
+- Los fallos **transitorios** (AFIP caído, timeout) se reintentan solos con backoff, hasta
+  5 intentos. Los de **validación** (CUIT del gym mal cargado, punto de venta inexistente,
+  DNI del socio incompleto) van directo a `error` con el detalle en `errorLog`, porque
+  reintentarlos sin corregir el dato falla igual.
+- Si el gimnasio no tiene `afipConfig.isActive`, **no se encola nada**.
 
 ---
 
@@ -924,6 +1121,54 @@ del front tiene tres estados y no dos.
 
 ---
 
+## 12 bis. Interno (`/internal`) — no es del front
+
+> **Esta sección no la consume el front.** La llama nuestra propia infraestructura.
+> Se documenta acá para que nadie la descubra por accidente y la crea pública.
+
+### `POST /internal/jobs/emit-invoices`
+
+Dispara una corrida de emisión de las facturas en estado `pendiente`. Es exactamente el
+mismo trabajo que hace el worker in-process, entrando por HTTP en vez de por temporizador.
+
+**Autenticación:** header `x-internal-secret` con el valor de `INVOICE_CRON_SECRET`.
+**No lleva JWT** — quien llama es una máquina, no un usuario, y la tarea opera sobre
+*todos* los gimnasios, así que tampoco pasa por `tenantMiddleware`. Un JWT de admin **no**
+sirve para entrar acá.
+
+Respuesta `200`:
+
+```json
+{ "status": "success",
+  "data": { "procesadas": 3, "emitidas": 2, "fallidas": 1, "truncado": false } }
+```
+
+| Campo | Significado |
+|---|---|
+| `procesadas` | Facturas tomadas de la cola en esta corrida |
+| `emitidas` | Las que consiguieron CAE |
+| `fallidas` | Las que fallaron (vuelven a la cola con backoff, o quedan en `error`) |
+| `truncado` | Quedó cola sin tocar por agotarse el cupo (`INVOICE_JOB_MAX`) o los 25s de presupuesto |
+
+⚠️ **`truncado: true` sostenido en el tiempo es una alarma**, no un detalle: significa que
+la cadencia del cron no da abasto con el volumen y hay que acortar el intervalo o subir
+`INVOICE_JOB_MAX`. Es el único indicador de que la cola se está acumulando.
+
+| Código | Cuándo |
+|---|---|
+| `401` | Falta el header, o el secreto no coincide |
+| `429` | Más de 30 llamadas por minuto |
+| `503` | `INVOICE_CRON_SECRET` no está configurada en el servidor |
+
+El `503` es deliberado: sin secreto el endpoint se **cierra**, no se abre. Un gatillo de
+emisión de comprobantes ante AFIP accesible sin credencial es peor que uno caído.
+
+**Correr dos veces en paralelo es seguro** — el lease atómico de `claimPendiente` impide
+que dos corridas se lleven la misma factura — pero no hace falta: `INVOICE_WORKER_MODE`
+elige uno u otro disparador, no los dos.
+
+---
+
 ## 13. Códigos de estado
 
 | Código | Cuándo |
@@ -953,6 +1198,8 @@ No reabrir sin motivo nuevo.
   `/checkins/heatmap`.
 - **El webhook no vuelve a crear clientes.**
 - **`POST /clients/:id/contacto` no actualiza la fecha.**
+- **`POST /clients/:id/formulario-enviado` sí la actualiza**, pero solo la del envío: el
+  primer contacto lo sella una única vez.
 - **La serie sale de UNA sola lectura del historial.** Hay un test que cuenta
   invocaciones al puerto. Es la razón de existir del endpoint.
 - **`Client.estado: 'inactivo'` es borrado lógico**, no una baja del gimnasio.

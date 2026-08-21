@@ -174,28 +174,20 @@ export class MongoRoutineRepository implements IRoutineRepository {
     return doc ? RoutineMapper.toDomain(doc) : null;
   }
 
-  async getExpiringSoon(gymId: string, days: number): Promise<Routine[]> {
-    const target = new Date();
-    target.setDate(target.getDate() + days);
-    const startOfDay = new Date(target.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(target.setHours(23, 59, 59, 999));
+  async countExpiringWithin(gymId: string, days: number): Promise<number> {
+    // Ventana completa: del arranque de hoy al cierre del día `days`-ésimo. Las dos
+    // puntas se construyen sobre fechas propias porque `setHours` MUTA y devuelve un
+    // número, así que reusar una sola instancia para las dos pisa la primera.
+    const desde = new Date();
+    desde.setHours(0, 0, 0, 0);
 
-    const docs = await RoutineModel.find({
-      gymId,
-      fechaVencimiento: { $gte: startOfDay, $lte: endOfDay },
-    });
-    return docs.map(RoutineMapper.toDomain);
-  }
-
-  async countExpiringByDay(gymId: string, days: number): Promise<number> {
-    const target = new Date();
-    target.setDate(target.getDate() + days);
-    const startOfDay = new Date(target.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(target.setHours(23, 59, 59, 999));
+    const hasta = new Date();
+    hasta.setDate(hasta.getDate() + days);
+    hasta.setHours(23, 59, 59, 999);
 
     return RoutineModel.countDocuments({
       gymId,
-      fechaVencimiento: { $gte: startOfDay, $lte: endOfDay },
+      fechaVencimiento: { $gte: desde, $lte: hasta },
     });
   }
 
