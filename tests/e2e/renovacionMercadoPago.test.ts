@@ -5,27 +5,18 @@ import { createHmac } from 'crypto';
 import type { Application } from 'express';
 
 /*
- * Renovación por Mercado Pago, de punta a punta: conectar la cuenta por OAuth →
- * configurar el catálogo de planes → pedir un link → Mercado Pago avisa por
- * webhook → el cliente queda renovado con la factura encolada (si el gym
- * factura).
+ * Renovación por Mercado Pago, de punta a punta: cargar la credencial propia
+ * (access token + webhook secret, sin OAuth desde el 22/08/2026) → configurar
+ * el catálogo de planes → pedir un link → Mercado Pago avisa por webhook → el
+ * cliente queda renovado con la factura encolada (si el gym factura).
  *
- * Se mockea `axios` y no los puertos (`IPaymentProvider`/`IMercadoPagoOAuthService`)
- * a propósito, mismo criterio que `facturacionArca.test.ts`: lo que hay que
- * verificar es el circuito HTTP completo —incluida la firma del webhook—, no que
- * el caso de uso llame a algo.
- *
- * Las variables de Mercado Pago se fijan ANTES del import dinámico de `env`, que
- * se parsea una sola vez al importarse (mismo motivo que `AFIP_BILLING_MODE` en
- * `facturacionArca.test.ts`).
+ * Se mockea `axios` y no el puerto `IPaymentProvider` a propósito, mismo
+ * criterio que `facturacionArca.test.ts`: lo que hay que verificar es el
+ * circuito HTTP completo —incluida la firma del webhook—, no que el caso de
+ * uso llame a algo.
  */
-process.env.MERCADOPAGO_CLIENT_ID ??= 'mp-client-id-test';
-process.env.MERCADOPAGO_CLIENT_SECRET ??= 'mp-client-secret-test';
-process.env.MERCADOPAGO_REDIRECT_URI ??= 'https://api.hype-workout-test.com/api/mercadopago/callback';
-process.env.MERCADOPAGO_WEBHOOK_SECRET ??= 'mp-webhook-secret-de-mas-de-32-caracteres';
-
 const mp = vi.hoisted(() => ({
-  oauthTokensPedidos: [] as any[],
+  cuentasConsultadas: [] as string[],
   linksCreados: [] as any[],
   pagosConsultados: [] as string[],
   /** Se reasignan por test para simular la respuesta de Mercado Pago. */
@@ -45,18 +36,6 @@ vi.mock('axios', async (importActual) => {
     default: {
       ...actual.default,
       post: async (url: string, body: any) => {
-        if (url.includes('/oauth/token')) {
-          mp.oauthTokensPedidos.push(body);
-          return {
-            data: {
-              access_token: 'mp-access-token-abc',
-              refresh_token: 'mp-refresh-token-abc',
-              user_id: mp.userId,
-              expires_in: 15_552_000,
-              token_type: 'bearer',
-            },
-          };
-        }
         if (url.includes('/checkout/preferences')) {
           mp.linksCreados.push(body);
           const id = `link-${mp.linksCreados.length}`;
@@ -70,6 +49,10 @@ vi.mock('axios', async (importActual) => {
         throw new Error(`POST no mockeado en el test de Mercado Pago: ${url}`);
       },
       get: async (url: string) => {
+        if (url.includes('/users/me')) {
+          mp.cuentasConsultadas.push(url);
+          return { data: { id: mp.userId } };
+        }
         if (url.includes('/v1/payments/')) {
           const paymentId = url.split('/').pop()!;
           mp.pagosConsultados.push(paymentId);
@@ -84,11 +67,18 @@ vi.mock('axios', async (importActual) => {
 const { createApp } = await import('../../src/app');
 const { env } = await import('../../src/config/env');
 
+/**
+ * Secreto de LA INTEGRACIÓN DEL GYM (cargado junto con su accessToken por
+ * `PUT /gyms/settings/mercadopago/credenciales`). Desde el 22/08/2026 no hay
+ * un `MERCADOPAGO_WEBHOOK_SECRET` de plataforma: cada gym tiene el suyo.
+ */
+const WEBHOOK_SECRET_DE_PRUEBA = 'mp-webhook-secret-de-mas-de-16';
+
 /** Firma un webhook igual que lo haría Mercado Pago, con el secreto de test. */
 const firmarWebhook = (dataId: string, xRequestId: string) => {
   const ts = String(Math.floor(Date.now() / 1000));
   const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
-  const v1 = createHmac('sha256', env.MERCADOPAGO_WEBHOOK_SECRET!).update(manifest).digest('hex');
+  const v1 = createHmac('sha256', WEBHOOK_SECRET_DE_PRUEBA).update(manifest).digest('hex');
   return `ts=${ts},v1=${v1}`;
 };
 
@@ -102,8 +92,9 @@ describe('Renovación por Mercado Pago, de punta a punta (e2e)', () => {
   );
 
   /**
-   * Deja un gimnasio con la cuenta de Mercado Pago conectada (recorre el OAuth
-   * real, con la state firmada de verdad) y un socio cargado.
+   * Deja un gimnasio con su credencial propia de Mercado Pago cargada (access
+   * token + webhook secret, vía `PUT /gyms/settings/mercadopago/credenciales`)
+   * y un socio cargado.
    */
   const montarGymConectado = async () => {
     contador += 1;
@@ -130,18 +121,11 @@ describe('Renovación por Mercado Pago, de punta a punta (e2e)', () => {
     );
     const asGym = (req: request.Test) => req.set('Authorization', `Bearer ${gymToken}`);
 
-    // Paso 1 del "Conectar con Mercado Pago": pide la URL de autorización por un
-    // GET autenticado (JSON, no redirect — una navegación real de browser no
-    // puede llevar el header Authorization).
-    const connectRes = await asGym(request(app).get('/api/gyms/settings/mercadopago/connect')).expect(
-      200
-    );
-    const state = new URL(connectRes.body.data.url).searchParams.get('state')!;
-
-    // Paso 2: el navegador vuelve de mercadopago.com con el `code`.
-    await request(app)
-      .get('/api/mercadopago/callback')
-      .query({ code: 'mp-auth-code-123', state })
+    // Carga su credencial propia. El backend valida el accessToken llamando a
+    // GET /users/me (mockeado arriba) y captura el mpUserId de esa respuesta —
+    // no hace falta que el dueño lo tipee.
+    await asGym(request(app).put('/api/gyms/settings/mercadopago/credenciales'))
+      .send({ accessToken: 'mp-access-token-abc', webhookSecret: WEBHOOK_SECRET_DE_PRUEBA })
       .expect(200);
 
     const altaSocio = await asGym(request(app).post('/api/clients'))
@@ -156,21 +140,26 @@ describe('Renovación por Mercado Pago, de punta a punta (e2e)', () => {
   });
 
   beforeEach(() => {
-    mp.oauthTokensPedidos = [];
+    mp.cuentasConsultadas = [];
     mp.linksCreados = [];
     mp.pagosConsultados = [];
     mp.userId = '555444333';
   });
 
-  it('conecta la cuenta y la refleja en GET /gyms/settings', async () => {
+  it('carga la credencial y la refleja en GET /gyms/settings', async () => {
     const { asGym } = await montarGymConectado();
 
     const settings = await asGym(request(app).get('/api/gyms/settings')).expect(200);
 
-    expect(settings.body.data.mercadoPagoConfig).toMatchObject({ conectado: true });
-    expect(settings.body.data.mercadoPagoConfig.conectadoEn).not.toBeNull();
-    // El token nunca viaja en claro por HTTP.
+    expect(settings.body.data.mercadoPagoConfig).toMatchObject({
+      conectado: true,
+      hasAccessToken: true,
+      hasWebhookSecret: true,
+    });
+    expect(settings.body.data.mercadoPagoConfig.credencialesActualizadasEn).not.toBeNull();
+    // El token y el secreto nunca viajan en claro por HTTP.
     expect(JSON.stringify(settings.body)).not.toContain('mp-access-token-abc');
+    expect(JSON.stringify(settings.body)).not.toContain(WEBHOOK_SECRET_DE_PRUEBA);
   });
 
   it('pide el link con el monto del catálogo y, cuando MP aprueba, renueva al socio', async () => {
@@ -223,12 +212,26 @@ describe('Renovación por Mercado Pago, de punta a punta (e2e)', () => {
     expect(historial.body.data.data[0]).toMatchObject({ estado: 'aprobado', mercadoPagoPaymentId: 'pago-e2e-1' });
   });
 
-  it('rechaza un webhook con firma inválida', async () => {
+  it('sin ningún gym conectado con ese user_id, no procesa (y ni siquiera llega a verificar firma)', async () => {
+    const webhookRes = await request(app)
+      .post('/api/mercadopago/webhook')
+      .set('x-signature', 'ts=1700000000,v1=firma-adulterada')
+      .set('x-request-id', 'req-falso')
+      .send({ type: 'payment', data: { id: 'pago-x' }, user_id: 'user-id-inexistente' })
+      .expect(200);
+
+    expect(webhookRes.body.data.procesado).toBe(false);
+    expect(mp.pagosConsultados).toHaveLength(0);
+  });
+
+  it('rechaza un webhook con firma inválida, para un gym que sí está conectado', async () => {
+    await montarGymConectado();
+
     await request(app)
       .post('/api/mercadopago/webhook')
       .set('x-signature', 'ts=1700000000,v1=firma-adulterada')
       .set('x-request-id', 'req-falso')
-      .send({ type: 'payment', data: { id: 'pago-x' }, user_id: '999' })
+      .send({ type: 'payment', data: { id: 'pago-x' }, user_id: mp.userId })
       .expect(401);
 
     expect(mp.pagosConsultados).toHaveLength(0);

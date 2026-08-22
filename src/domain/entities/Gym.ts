@@ -101,21 +101,35 @@ export interface GoogleFormConfig {
 }
 
 export interface MercadoPagoConfig {
-  /** Access token OAuth de la cuenta del gym, cifrado con AES-256-GCM. NUNCA se expone por HTTP. */
-  encryptedAccessToken?: string;
-  /** Refresh token OAuth del gym, cifrado. Vive 180 días junto al access token. */
-  encryptedRefreshToken?: string;
   /**
-   * Id del vendedor en Mercado Pago (`user_id` que devuelve `/oauth/token`).
+   * Access token de producción (Checkout Pro) de la cuenta PROPIA del gym,
+   * cifrado con AES-256-GCM. NUNCA se expone por HTTP.
+   *
+   * A diferencia del token OAuth que reemplaza (hasta el 22/08/2026), este no
+   * vence por tiempo: Mercado Pago lo invalida solo si el dueño lo rota a mano
+   * desde su panel. Por eso no hace falta un refresh token ni una fecha de
+   * vencimiento — mismo criterio que `afipConfig.encryptedApiKey`.
+   */
+  encryptedAccessToken?: string;
+  /**
+   * Secreto de firma de la integración del gym en Mercado Pago Developers
+   * ("Tus integraciones" > la app > Webhooks), cifrado. Es POR CUENTA: cada
+   * gym tiene el suyo, no hay uno compartido de plataforma. Hace falta en
+   * claro para verificar el HMAC del webhook, así que se cifra (reversible) y
+   * no se hashea como `googleFormConfig.webhookSecretHash`.
+   */
+  encryptedWebhookSecret?: string;
+  /**
+   * Id de la cuenta de Mercado Pago (`id` que devuelve `GET /users/me`),
+   * resuelto automáticamente al cargar el `accessToken` — el dueño no lo tipea.
    *
    * Es lo que permite identificar a qué gym pertenece un pago cuando llega el
-   * webhook: la notificación de MP no trae el `gymId`, pero sí el `user_id` del
-   * vendedor conectado, y eso es lo que se busca acá.
+   * webhook: la notificación de MP no trae el `gymId`, pero sí el `user_id` de
+   * la cuenta que cobró, y eso es lo que se busca acá.
    */
   mpUserId?: string;
-  /** Vencimiento del access token, para saber cuándo hace falta refrescarlo. */
-  expiraEn?: Date;
-  conectadoEn?: Date;
+  /** Última vez que se cargó o rotó alguna de las dos credenciales de arriba. */
+  credencialesActualizadasEn?: Date;
 }
 
 export type MembershipPlanType = 'mensual' | 'trimestral' | 'semestral' | 'anual';

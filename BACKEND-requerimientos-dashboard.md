@@ -87,31 +87,34 @@ implementadas y verificadas en vivo contra este backend — detalle completo en
 [§2 octies](#2-octies-hecho-el-21-08-frontend--f1-f2-y-f3-implementadas-y-verificadas-en-vivo-).
 Ya no hay nada que "retomar" acá.
 
-### 0.4 Probar Mercado Pago contra una cuenta de test real ⏳
+### 0.4 Probar Mercado Pago contra una cuenta real ⏳
 
 Mismo pendiente que tuvo AFIP SDK en su momento ([§0.2](#02-probar-la-facturación-contra-el-homologación-de-arca-)):
 el circuito está probado de punta a punta contra un mock de `axios`
-(`tests/e2e/renovacionMercadoPago.test.ts`, 5 tests), pero el mock acepta cualquier cosa.
-Falta:
+(`tests/e2e/renovacionMercadoPago.test.ts`, 8 tests), pero el mock acepta cualquier cosa.
 
-1. **Registrar la app en Mercado Pago Developers** y cargar
-   `MERCADOPAGO_CLIENT_ID`/`MERCADOPAGO_CLIENT_SECRET`/`MERCADOPAGO_REDIRECT_URI` — hoy no
-   están seteadas en ningún `.env`, así que `GET /gyms/settings/mercadopago/connect`
-   responde `400` hasta que se carguen.
-2. **Configurar el secreto del webhook** (`MERCADOPAGO_WEBHOOK_SECRET`) en el panel de la
-   app — sin él, `POST /mercadopago/webhook` responde `503` a propósito (ver
-   [§2 septies](#2-septies-hecho-el-21-08--pasarela-de-pago-con-mercado-pago-)).
-3. **Correr el flujo completo con una cuenta de vendedor de test de Mercado Pago**: conectar
-   por OAuth de verdad, generar un link, pagarlo con una tarjeta de prueba, y confirmar que
-   el webhook real llega con la forma que el código espera. ⚠️ El manifest exacto del HMAC
-   de la firma (`id:…;request-id:…;ts:…;`) se armó a partir de las guías públicas de
-   Mercado Pago, **no se pudo confirmar contra un webhook real todavía** — es la misma
-   clase de incógnita que tuvo `CondicionIVAReceptorId` con AFIP, y se resuelve igual: mirando
-   qué llega de verdad antes de confiar en la doc a ciegas.
+> **Cambió el 22/08/2026** — ver [§2 novies](#2-novies-hecho-el-22-08--mercado-pago-sin-oauth-credencial-directa-por-gym-):
+> ya no hace falta registrar ninguna app en Mercado Pago Developers ni cargar variables de
+> entorno de plataforma. Lo único que falta es una prueba manual con una cuenta real:
 
-`MERCADOPAGO_REDIRECT_URI` necesita una URL pública estable — depende del mismo D1
-(dominio) que la cookie de sesión. En local se puede probar con un túnel (ngrok) mientras
-tanto.
+1. **Conseguir el Access Token de producción** de una cuenta de Mercado Pago (Tus
+   integraciones → Credenciales de producción) y cargarlo por
+   `PUT /gyms/settings/mercadopago/credenciales` desde el front. El backend lo valida
+   llamando a `GET /users/me` — si no sirve, tira `502` ahí mismo, antes de guardar nada.
+2. **Configurar el webhook de ESA integración** (Tus integraciones → su app → Webhooks →
+   Configurar notificaciones) apuntando a `https://<tu-túnel-o-dominio>/api/mercadopago/webhook`,
+   y cargar el secreto que da esa pantalla en el mismo `PUT` de arriba (`webhookSecret`).
+3. **Correr el flujo completo**: pedir un link (`POST /clients/:id/renewal-requests`),
+   pagarlo con una tarjeta de prueba, y confirmar que el webhook real llega con la forma
+   que el código espera. ⚠️ El manifest exacto del HMAC de la firma
+   (`id:…;request-id:…;ts:…;`) se armó a partir de las guías públicas de Mercado Pago,
+   **no se pudo confirmar contra un webhook real todavía** — es la misma clase de
+   incógnita que tuvo `CondicionIVAReceptorId` con AFIP, y se resuelve igual: mirando qué
+   llega de verdad antes de confiar en la doc a ciegas.
+
+Sin dominio propio (D1 sigue pendiente), el paso 2 necesita un túnel (ngrok) apuntando al
+puerto local mientras tanto — igual que antes, pero ahora es lo único que depende de eso:
+ya no hay `MERCADOPAGO_REDIRECT_URI` de OAuth que armar.
 
 ---
 
@@ -125,7 +128,7 @@ tanto.
 | [F2](#f2--vencimiento-de-rutinas-textos-y-contadores) | ✅ hecho | Vencimiento de rutinas: textos y contadores | **Front** — verificado, no necesitó cambios | No — mismo campo, otro significado |
 | [F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación) | ✅ hecho | Pantalla de Mercado Pago: conectar cuenta, catálogo de planes y botón de renovación en la ficha del socio | **Front** — hecho y verificado en vivo el 21-08 | No — flujo nuevo |
 | [S1](#01-correr-los-dos-scripts-contra-la-base-) | **P1** | Correr `purge:afip-keys` y `backfill:vencimiento-rutinas` | **Nada de código** — es ejecutar dos scripts | No |
-| [S2](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-) | P2 | Registrar la app de Mercado Pago, cargar sus credenciales y probar el flujo con una cuenta de test | **Nada de código** — config de plataforma + prueba manual | No |
+| [S2](#04-probar-mercado-pago-contra-una-cuenta-real-) | P2 | Cargar una credencial real de Mercado Pago y probar el flujo | **Nada de código** — carga de credencial + prueba manual | No |
 | [P3-B](#p3-b--embudo-en-la-serie-mensual) | P3 | Embudo en la serie mensual | `GetGymKpisSeriesUseCase` + `IMetricsRepository` | No — aditivo |
 
 **No hay nada abierto del lado del código, ni backend ni front.** D1 y D2 son decisiones de
@@ -678,6 +681,99 @@ particione en memoria.
 Si alguna vez se pide, **la forma correcta es la segunda** —una lectura, partición en
 memoria— para no romper la regla de la lectura única. La primera es más fácil de escribir
 y le saca al endpoint la única razón por la que existe.
+
+---
+
+## 2 novies. Hecho el 22-08 — Mercado Pago sin OAuth, credencial directa por gym ✅
+
+821 tests (eran 813 al arrancar la tanda; 821 en verde, `tsc --noEmit` y `npm run typecheck`
+limpios salvo un error preexistente y sin relación en
+`tests/unit/gym/UpdateMembershipPlansUseCase.test.ts`, anotado, no de esta tanda).
+
+**Pedido del usuario:** que cada gimnasio cargue su propia credencial de Mercado Pago "al
+igual que los datos de facturación y las credenciales de WhatsApp" — sin depender de una
+app de plataforma ni de un flujo OAuth con popup. Se reemplazó el diseño de
+[§2 septies](#2-septies-hecho-el-21-08--pasarela-de-pago-con-mercado-pago-) por completo,
+sin dejar un modo viejo desconectado (a diferencia de `AFIP_BILLING_MODE`): como ningún gym
+real había conectado una cuenta todavía, no hubo nada que migrar.
+
+### 1. Por qué el diseño anterior ya mandaba la plata a la cuenta correcta, y por qué se cambió igual
+
+El OAuth (`client_id`/`client_secret` de plataforma + cada gym autorizando su propia
+cuenta) **ya hacía que el dinero fuera a la cuenta del gym**, no a la de la plataforma — el
+`client_id` de plataforma es solo "qué app pide permiso", como "Iniciar sesión con Google".
+Pero traía tres costos que el modelo directo no tiene:
+
+- Necesitaba una **app de tipo Marketplace aprobada** por Mercado Pago.
+- Necesitaba un **dominio público estable** para el `redirect_uri` — bloqueado por D1,
+  igual que la cookie de sesión.
+- Obligaba a un **popup de login dentro de la app** para algo que el dueño puede resolver
+  solo, pegando dos valores, como ya hace con AFIP.
+
+Investigado antes de decidir (no asumido): el secreto de firma del webhook de Mercado Pago
+es **por integración/aplicación**, no por cuenta compartida — cada cuenta que genera
+credenciales tiene la suya en "Tus integraciones". Esto es lo que habilita el modelo directo:
+cada gym, al cargar su Access Token, también tiene su propio secreto de webhook para
+configurar. Y el Access Token de producción **no vence por tiempo** (a diferencia del OAuth,
+que vencía a los 180 días) — se regenera manualmente desde el panel del dueño, así que no
+hace falta refresh token ni una tarea de refresco.
+
+### 2. Qué cambió en el dominio ✅
+
+`Gym.mercadoPagoConfig` pasó de `{ encryptedAccessToken, encryptedRefreshToken, mpUserId,
+expiraEn, conectadoEn }` a `{ encryptedAccessToken, encryptedWebhookSecret, mpUserId,
+credencialesActualizadasEn }` — mismo nombre de campo (`credencialesActualizadasEn`) que
+`afipConfig`, a propósito.
+
+`mpUserId` **no lo tipea el dueño**: `UpdateMercadoPagoCredentialsUseCase` llama a
+`GET /users/me` de Mercado Pago con el `accessToken` que mandó (nuevo método
+`IPaymentProvider.obtenerCuenta()`) y captura el `id` de esa respuesta. De paso, esa
+llamada valida que el token realmente sirve — si Mercado Pago responde `401`, el caso de
+uso lanza y no se guarda nada, en vez de descubrirlo recién al intentar cobrar el primer
+link.
+
+### 3. Qué se borró, sin reemplazo ni modo desconectado ✅
+
+- `IMercadoPagoOAuthService` (puerto) y `MercadoPagoOAuthAdapter` (adaptador).
+- `ResolverMercadoPagoAccessTokenUseCase` (ya no hace falta refrescar nada) y
+  `HandleMercadoPagoCallbackUseCase`.
+- `GET /gyms/settings/mercadopago/connect` y `GET /mercadopago/callback`.
+- `MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`/`WEBHOOK_SECRET` de `env.ts` y
+  `.env.example` — **cero variables de entorno** para Mercado Pago, igual que AFIP en modo
+  `cuenta_propia`.
+
+### 4. El webhook ahora resuelve el gym ANTES de verificar la firma ✅
+
+Antes: un secreto único de plataforma verificaba cualquier webhook, sin importar de qué
+gym. Ahora cada gym tiene su propio secreto, así que hay que saber primero A CUÁL antes de
+poder verificar nada. `POST /mercadopago/webhook` (`mercadopago.routes.ts`) resuelve en
+este orden: busca el gym por el `user_id` del body (no verificado todavía) →
+si no hay secreto cargado, `503` → si la firma no calza contra el secreto de ESE gym,
+`401` → si no hay `accessToken` cargado, `503` → recién ahí llama al caso de uso.
+
+**Es seguro aunque el `user_id` no esté verificado en ese primer paso**: un atacante que lo
+adivine (o copie de un gym real) igual necesita producir un HMAC válido con un secreto que
+no tiene. Mismo modelo de confianza que webhooks multi-tenant de otros proveedores (Stripe
+Connect y similares), aplicado acá.
+
+`ProcessMercadoPagoWebhookUseCase` se simplificó: ya no depende de `IGymRepository` ni de
+un resolver de token — recibe `gymId` y `accessToken` ya resueltos por la ruta, porque
+encontrar el gym y verificar la firma son responsabilidades de borde (mapean a
+200/503/401 distintos), no de este caso de uso.
+
+### 5. Documentación actualizada ✅
+
+`docs/API_ENDPOINTS.md` §5 (`PUT /gyms/settings/mercadopago/credenciales` reemplaza a
+`connect`) y §5 bis (webhook: orden de validación gym-primero). Este documento, sección
+[§0.4](#04-probar-mercado-pago-contra-una-cuenta-real-), que sigue siendo la guía de qué
+falta probar — más corta que antes: ya no hace falta registrar nada en Mercado Pago
+Developers a nivel plataforma.
+
+### 6. El front también se puso al día ✅
+
+Sesión hermana (`front-9f`), mismo día: `MercadoPagoConnectCard.tsx` (el botón + popup)
+se reemplazó por un formulario de dos campos (`accessToken`/`webhookSecret`), mismo patrón
+que `AfipCredentialsForm.tsx`. Verificado: `tsc -b` limpio, tests del front en verde.
 
 ---
 

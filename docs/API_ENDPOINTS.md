@@ -322,7 +322,9 @@ de WhatsApp, ni la API key de IA, ni la de AFIP, ni el hash del secreto del webh
     },
     "mercadoPagoConfig": {
       "conectado": "boolean",
-      "conectadoEn": "ISO instante | null"
+      "hasAccessToken": "boolean",
+      "hasWebhookSecret": "boolean",
+      "credencialesActualizadasEn": "ISO instante | null"
     },
     "membershipPlans": [
       { "tipo": "mensual | trimestral | semestral | anual", "duracionDias": "number", "monto": "number (PESOS)", "activo": "boolean" }
@@ -442,34 +444,41 @@ hasheado: si el gym no lo copia acá, no lo recupera y tiene que rotar de nuevo.
 **invalida el anterior**, así que el Apps Script empieza a recibir `401` hasta que
 alguien pegue el nuevo. Es `POST` y no `PUT` porque no es idempotente.
 
-### `GET /gyms/settings/mercadopago/connect` — "Conectar con Mercado Pago"
+### `PUT /gyms/settings/mercadopago/credenciales`
 
-**Devuelve JSON con la URL, no redirige.** Esta ruta está detrás de `authMiddleware` como
-el resto de `/gyms/settings/*`, y una navegación real del browser (`<a href>`,
-`window.location`, `window.open`) **no puede llevar el header `Authorization: Bearer`** —
-eso solo lo hace un `fetch`/axios. Por eso el contrato es:
+> **Cambió el 22/08/2026.** Reemplazó al flujo OAuth (`GET .../connect` +
+> `GET /mercadopago/callback`, ver §5 bis vieja más abajo si hace falta releerla en un
+> commit anterior). Cada gimnasio carga **su propia cuenta** de Mercado Pago a mano,
+> mismo patrón que `PUT /gyms/settings/afip/credenciales` — sin popup, sin login dentro
+> de la app, sin app de plataforma que registrar en Mercado Pago Developers.
+
+**JSON normal** (a diferencia de AFIP, acá no hay archivos):
 
 ```json
-{ "status": "success", "data": { "url": "https://auth.mercadopago.com/authorization?..." } }
+{ "accessToken": "string (opcional)", "webhookSecret": "string, mín 16 caracteres (opcional)" }
 ```
 
-El front pide esta URL con un **GET autenticado normal** (axios, como cualquier otro
-endpoint) y recién con la respuesta en la mano navega él mismo —`window.open(data.url)` o
-`window.location.href = data.url`—. A partir de ahí ya es una navegación de browser común:
-el dueño inicia sesión en Mercado Pago y termina en el callback público (§5 bis), que es
-quien finalmente confirma la conexión. El front no ve ni maneja el `code` ni el `state`.
+Al menos uno de los dos. `400` si no se manda ninguno.
 
-Con el gym ya conectado, volver a llamarlo simplemente **reconecta** (útil si el dueño
-quiere cambiar de cuenta de Mercado Pago).
+- `accessToken`: el access token de **producción** (Checkout Pro) de la cuenta del gym en
+  Mercado Pago — no vence por tiempo, solo si el dueño lo rota a mano desde su panel. El
+  backend lo valida llamando a `GET /users/me` de Mercado Pago con ese token: si no sirve,
+  `502` y no se guarda nada. Si sirve, el `id` que devuelve esa llamada se guarda como
+  `mpUserId` — **el dueño no lo tipea**, sale solo.
+- `webhookSecret`: el secreto de **la integración del gym** en Mercado Pago Developers
+  (Tus integraciones → su app → Webhooks → Configurar notificaciones). Cada gym tiene el
+  suyo — no hay uno compartido de plataforma.
 
-`400` si la plataforma no tiene `MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`
-configuradas (ver §5 bis).
+Devuelve `{ mercadoPagoConfig }` con la misma forma segura de `GET /gyms/settings`. Nunca
+el contenido de las credenciales, solo `hasAccessToken` / `hasWebhookSecret` /
+`credencialesActualizadasEn`.
 
 ### `DELETE /gyms/settings/mercadopago`
 
 Desconecta la cuenta. `{ status, message }`. Después de esto, `GET /gyms/settings` vuelve
-a mostrar `mercadoPagoConfig: { conectado: false, conectadoEn: null }`, y
-`POST /clients/:id/renewal-requests` empieza a rechazar con `400` hasta que se reconecte.
+a mostrar `mercadoPagoConfig: { conectado: false, hasAccessToken: false, hasWebhookSecret:
+false, credencialesActualizadasEn: null }`, y `POST /clients/:id/renewal-requests` empieza
+a rechazar con `400` hasta que se recarguen las credenciales.
 
 ### `PUT /gyms/settings/membership-plans`
 
@@ -498,37 +507,34 @@ mismo monto y la misma duración sin que el operador tenga que tipearlos a mano.
 
 ---
 
-## 5 bis. Mercado Pago — callback y webhook (público, no los llama el front por fetch)
+## 5 bis. Mercado Pago — webhook (público, no lo llama el front)
 
-Dos superficies sin JWT, porque del otro lado no hay un usuario logueado: el navegador
-volviendo de mercadopago.com, y Mercado Pago avisando un pago. El resto de la integración
-(conectar, desconectar, catálogo, pedir un link) sí requiere sesión y está en §5/§6.
-
-### `GET /mercadopago/callback`
-
-Query: `code`, `state` (los arma Mercado Pago solo, redirigiendo desde la pantalla de
-autorización — nunca los arma el front).
-
-```json
-{ "status": "success", "data": { "message": "Cuenta de Mercado Pago conectada correctamente. Ya podés cerrar esta pestaña." } }
-```
-
-⚠️ **No hay redirect a una pantalla del front.** Devuelve JSON plano porque este endpoint
-no conoce la URL del front (no hay dominio propio todavía, ver D1 en
-`BACKEND-requerimientos-dashboard.md`). Si `GET /gyms/settings/mercadopago/connect` se abrió
-en una pestaña nueva, esta pantalla de confirmación queda ahí — el front puede pollear
-`GET /gyms/settings` (`mercadoPagoConfig.conectado`) desde la pestaña original para
-enterarse de que ya se conectó, o simplemente pedirle al dueño que vuelva y refresque.
-
-`400` si el `state` es inválido o venció (dura 10 minutos, igual que el `code` de Mercado
-Pago).
+Única superficie sin JWT de esta integración, porque del otro lado no hay un usuario
+logueado: es Mercado Pago avisando un pago. El resto (cargar credencial, desconectar,
+catálogo, pedir un link) requiere sesión y está en §5/§6.
 
 ### `POST /mercadopago/webhook`
 
 **El front nunca lo llama.** Lo dispara Mercado Pago cuando un pago cambia de estado.
-Verifica la firma `x-signature`/`x-request-id` con `MERCADOPAGO_WEBHOOK_SECRET`; sin ese
-secreto configurado responde `503` (cerrado por default, no abierto), y con una firma que
-no calza, `401`.
+
+> **Cambió el 22/08/2026.** El secreto para verificar la firma ya no es único de
+> plataforma: es el de **la integración del gym** (cargado por
+> `PUT /gyms/settings/mercadopago/credenciales`). Por eso este endpoint primero busca a
+> qué gym pertenece la notificación por su `user_id` —lo único del body que sirve para
+> eso— y recién con ESE gym encontrado verifica la firma con su secreto.
+
+Orden real de validación:
+
+1. `type`/`data.id`/`user_id` ausentes o con forma rara → `200` con
+   `{ procesado: false, motivo: "Payload inesperado" }`. No hay nada que reintentar.
+2. Ningún gym conectado con ese `user_id` → `200` con `{ procesado: false, motivo: "..." }`.
+   No es un error: puede ser ruido, o una integración de otra plataforma.
+3. El gym existe pero no cargó su `webhookSecret` → `503` (cerrado por default, no
+   abierto — mismo criterio que `internalAuthMiddleware`).
+4. Firma inválida (falta el header, o no calza) → `401`.
+5. El gym no cargó su `accessToken` → `503`.
+6. Firma OK → sigue al caso de uso, que vuelve a pedirle el pago real a Mercado Pago
+   antes de tocar cualquier dato (nunca confía en el body del webhook a secas).
 
 No hay nada que el front tenga que integrar acá — se documenta para que quede claro que
 existe y por qué una renovación por Mercado Pago tarda unos segundos en reflejarse: el
@@ -722,8 +728,8 @@ que el socio no termine pagando la misma cuota dos veces si abre el link viejo p
 ```
 
 **Siempre por catálogo** (no acepta `monto` suelto): no tiene sentido generar un link por
-un importe que el gym no definió como plan. `400` si el gym no conectó Mercado Pago
-(§5/§5 bis) o si el `tipoPlan` no está configurado.
+un importe que el gym no definió como plan. `400` si el gym no cargó su credencial de
+Mercado Pago (§5) o si el `tipoPlan` no está configurado.
 
 ```jsonc
 // Response 201

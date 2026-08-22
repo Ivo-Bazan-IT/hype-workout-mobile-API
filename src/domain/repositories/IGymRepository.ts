@@ -53,11 +53,11 @@ export interface IGymSecretsRepository {
   ): Promise<{ accessToken: string; cert: string; key: string } | null>;
 
   /**
-   * Credenciales OAuth de Mercado Pago del gym (cuenta propia, conectada por
-   * `PUT /gyms/settings/mercadopago/callback`). `null` si el gym nunca conectó su
-   * cuenta.
+   * Access token de la cuenta PROPIA de Mercado Pago del gym (cargado por
+   * `PUT /gyms/settings/mercadopago/credenciales`, sin OAuth). `null` si el gym
+   * nunca cargó el suyo. A diferencia de la credencial de AFIP SDK, no hay un
+   * refresh token que acompañarlo: el token de producción de MP no vence por
+   * tiempo, solo si el dueño lo rota a mano desde su panel.
    */
-  getMercadoPagoCredentials(
-    gymId: string
-  ): Promise<{ accessToken: string; refreshToken: string; expiraEn?: Date } | null>;
+  getMercadoPagoCredentials(gymId: string): Promise<{ accessToken: string } | null>;
 }

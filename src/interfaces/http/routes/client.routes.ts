@@ -7,7 +7,6 @@ import { MongoRenewalRequestRepository } from '../../../infrastructure/database/
 import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { MercadoPagoAdapterFactory } from '../../../infrastructure/external/payments/MercadoPagoAdapterFactory';
-import { MercadoPagoOAuthAdapter } from '../../../infrastructure/external/payments/MercadoPagoOAuthAdapter';
 import { MetaCloudApiProviderFactory } from '../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory';
 import { CreateClientUseCase } from '../../../application/use-cases/client/CreateClientUseCase';
 import { SearchClientsUseCase } from '../../../application/use-cases/client/SearchClientsUseCase';
@@ -18,12 +17,9 @@ import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client
 import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
 import { RegisterFormSentUseCase } from '../../../application/use-cases/client/RegisterFormSentUseCase';
 import { CreateRenewalPaymentLinkUseCase } from '../../../application/use-cases/payments/CreateRenewalPaymentLinkUseCase';
-import { ResolverMercadoPagoAccessTokenUseCase } from '../../../application/use-cases/payments/ResolverMercadoPagoAccessTokenUseCase';
 import { ClientController } from '../controllers/ClientController';
 import { createClientSchema, updateClientSchema, updateClientSurveySchema } from '../validators/client.validator';
 import { registerFirstContactSchema, renewClientSchema, createRenewalRequestSchema } from '../validators/client.validator';
-import { env } from '../../../config/env';
-import { ValidationError } from '../../../shared/errors/AppError';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
@@ -82,23 +78,6 @@ export const createClientRoutes = () => {
   const updateClientSurveyUseCase = new UpdateClientSurveyUseCase(clientRepository);
   const registerFirstContactUseCase = new RegisterFirstContactUseCase(clientRepository);
   const registerFormSentUseCase = new RegisterFormSentUseCase(clientRepository);
-
-  // Mercado Pago no está disponible en todos los deploys (requiere
-  // MERCADOPAGO_CLIENT_ID/SECRET/REDIRECT_URI, ver src/config/env.ts): se arma
-  // recién al construir el adaptador OAuth, dentro del handler, para no hacer
-  // fallar el arranque del server en un ambiente que todavía no la configuró.
-  const construirMercadoPagoOAuthAdapter = (): MercadoPagoOAuthAdapter => {
-    if (!env.MERCADOPAGO_CLIENT_ID || !env.MERCADOPAGO_CLIENT_SECRET || !env.MERCADOPAGO_REDIRECT_URI) {
-      throw new ValidationError(
-        'Mercado Pago no está configurado en la plataforma (faltan MERCADOPAGO_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI).'
-      );
-    }
-    return new MercadoPagoOAuthAdapter(
-      env.MERCADOPAGO_CLIENT_ID,
-      env.MERCADOPAGO_CLIENT_SECRET,
-      env.MERCADOPAGO_REDIRECT_URI
-    );
-  };
 
   const paymentProviderFactory = new MercadoPagoAdapterFactory();
   const whatsappProviderFactory = new MetaCloudApiProviderFactory();
@@ -187,21 +166,13 @@ export const createClientRoutes = () => {
     async (req: AuthenticatedRequest, res, next) => {
       try {
         const gymId = getTenantId(req);
-        const oauthService = construirMercadoPagoOAuthAdapter();
-        const resolverAccessToken = new ResolverMercadoPagoAccessTokenUseCase(
-          gymRepository,
-          gymSecretsRepo,
-          oauthService,
-          encryptionService
-        );
         const createRenewalPaymentLinkUseCase = new CreateRenewalPaymentLinkUseCase(
           clientRepository,
           gymRepository,
           gymSecretsRepo,
           renewalRequestRepository,
           paymentProviderFactory,
-          whatsappProviderFactory,
-          resolverAccessToken
+          whatsappProviderFactory
         );
 
         const result = await createRenewalPaymentLinkUseCase.execute({

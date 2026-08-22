@@ -53,11 +53,10 @@ export interface GymDocument {
     isActive: boolean;
   };
   mercadoPagoConfig?: {
-    encryptedAccessToken?: string; // AES-256-GCM encrypted (OAuth propio del gym)
-    encryptedRefreshToken?: string; // AES-256-GCM encrypted
-    mpUserId?: string; // user_id de MP del vendedor conectado — clave del webhook
-    expiraEn?: Date;
-    conectadoEn?: Date;
+    encryptedAccessToken?: string; // AES-256-GCM encrypted (cuenta propia del gym)
+    encryptedWebhookSecret?: string; // AES-256-GCM encrypted (secreto de SU integración en MP)
+    mpUserId?: string; // id de la cuenta de MP, resuelto vía GET /users/me — clave del webhook
+    credencialesActualizadasEn?: Date;
   };
   membershipPlans: {
     tipo: 'mensual' | 'trimestral' | 'semestral' | 'anual';
@@ -149,16 +148,16 @@ const gymSchema = new Schema<GymDocument>({
     isActive: { type: Boolean, default: false }
   },
 
-  // Conexión OAuth con la cuenta de Mercado Pago del gym. Sin `default` a nivel
-  // objeto, a propósito: un gym que nunca conectó no tiene ninguno de estos campos,
-  // ni siquiera un objeto vacío — es la señal que usa el front para mostrar
-  // "no conectado" en vez de un formulario a medio completar.
+  // Credencial PROPIA de Mercado Pago del gym (Access Token + Webhook Secret de
+  // SU integración, cargados a mano desde Configuración — mismo patrón que
+  // afipConfig). Sin `default` a nivel objeto, a propósito: un gym que nunca
+  // cargó nada no tiene ninguno de estos campos, ni siquiera un objeto vacío —
+  // es la señal que usa el front para mostrar "no conectado".
   mercadoPagoConfig: {
     encryptedAccessToken: { type: String },
-    encryptedRefreshToken: { type: String },
+    encryptedWebhookSecret: { type: String },
     mpUserId: { type: String, index: true },
-    expiraEn: { type: Date },
-    conectadoEn: { type: Date },
+    credencialesActualizadasEn: { type: Date },
   },
 
   // Catálogo de precios por plan. Alimenta tanto el link de Mercado Pago como la

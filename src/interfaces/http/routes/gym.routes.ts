@@ -7,6 +7,7 @@ import { DeleteGymUseCase } from '../../../application/use-cases/gym/DeleteGymUs
 import { ListGymsUseCase } from '../../../application/use-cases/gym/ListGymsUseCase';
 import { UpdateAfipConfigUseCase } from '../../../application/use-cases/gym/UpdateAfipConfigUseCase';
 import { UpdateAfipCredentialsUseCase } from '../../../application/use-cases/gym/UpdateAfipCredentialsUseCase';
+import { UpdateMercadoPagoCredentialsUseCase } from '../../../application/use-cases/gym/UpdateMercadoPagoCredentialsUseCase';
 import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/UpdateAiConfigUseCase';
 import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
 import { UpdateGoogleFormConfigUseCase } from '../../../application/use-cases/gym/UpdateGoogleFormConfigUseCase';
@@ -16,15 +17,15 @@ import { MongoGymRepository } from '../../../infrastructure/database/mongoose/re
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { BcryptWebhookSecretService } from '../../../infrastructure/encryption/BcryptWebhookSecretService';
-import { MercadoPagoOAuthAdapter } from '../../../infrastructure/external/payments/MercadoPagoOAuthAdapter';
+import { MercadoPagoAdapterFactory } from '../../../infrastructure/external/payments/MercadoPagoAdapterFactory';
 import { Gym } from '../../../domain/entities/Gym';
 import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
-import { env } from '../../../config/env';
 import {
   createGymSchema,
   updateGymSchema,
   updateAfipConfigSchema,
   updateAfipCredentialsSchema,
+  updateMercadoPagoCredentialsSchema,
   updateAiConfigSchema,
   updateWhatsappConfigSchema,
   updateGoogleFormConfigSchema,
@@ -34,23 +35,6 @@ import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
-
-/** Cuánto dura el `state` firmado del "Conectar con Mercado Pago" antes de que el
- *  callback lo rechace. El code de MP en sí vive 10 minutos; con esto alcanza. */
-const CONNECT_STATE_TTL_MS = 10 * 60_000;
-
-const construirMercadoPagoOAuthAdapter = (): MercadoPagoOAuthAdapter => {
-  if (!env.MERCADOPAGO_CLIENT_ID || !env.MERCADOPAGO_CLIENT_SECRET || !env.MERCADOPAGO_REDIRECT_URI) {
-    throw new ValidationError(
-      'Mercado Pago no está configurado en la plataforma (faltan MERCADOPAGO_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI).'
-    );
-  }
-  return new MercadoPagoOAuthAdapter(
-    env.MERCADOPAGO_CLIENT_ID,
-    env.MERCADOPAGO_CLIENT_SECRET,
-    env.MERCADOPAGO_REDIRECT_URI
-  );
-};
 
 const createAdminGymRouter = () => {
   const router = Router();
@@ -163,12 +147,13 @@ const toSafeGoogleFormConfig = (gym: Gym) => ({
   fieldMapping: gym.googleFormConfig?.fieldMapping ?? {},
 });
 
-// Igual criterio que `toSafeAfipConfig`: nunca se devuelve el token, solo si la
-// conexión existe y desde cuándo — lo único que la pantalla necesita para
-// mostrar "Conectado ✓" u ofrecer el botón de conectar.
+// Igual criterio que `toSafeAfipConfig`: nunca se devuelve el token ni el
+// secreto del webhook, solo si cada uno ya está cargado y desde cuándo.
 const toSafeMercadoPagoConfig = (gym: Gym) => ({
   conectado: Boolean(gym.mercadoPagoConfig?.mpUserId),
-  conectadoEn: gym.mercadoPagoConfig?.conectadoEn ?? null,
+  hasAccessToken: Boolean(gym.mercadoPagoConfig?.encryptedAccessToken),
+  hasWebhookSecret: Boolean(gym.mercadoPagoConfig?.encryptedWebhookSecret),
+  credencialesActualizadasEn: gym.mercadoPagoConfig?.credencialesActualizadasEn ?? null,
 });
 
 const createUserGymRouter = () => {
@@ -177,8 +162,15 @@ const createUserGymRouter = () => {
   const gymRepository = new MongoGymRepository();
   const encryptionService = new EncryptionService();
 
+  const paymentProviderFactory = new MercadoPagoAdapterFactory();
+
   const updateAfipConfigUseCase = new UpdateAfipConfigUseCase(gymRepository);
   const updateAfipCredentialsUseCase = new UpdateAfipCredentialsUseCase(gymRepository, encryptionService);
+  const updateMercadoPagoCredentialsUseCase = new UpdateMercadoPagoCredentialsUseCase(
+    gymRepository,
+    paymentProviderFactory,
+    encryptionService
+  );
   const updateAiConfigUseCase = new UpdateAiConfigUseCase(gymRepository, encryptionService);
   const updateWhatsappConfigUseCase = new UpdateWhatsappConfigUseCase(
     gymRepository,
@@ -388,36 +380,32 @@ const createUserGymRouter = () => {
   );
 
   /**
-   * "Conectar con Mercado Pago": arma la URL de autorización y la devuelve como
-   * JSON — **no redirige del lado del servidor**. Esta ruta vive detrás de
-   * `authMiddleware`, y una navegación real del browser (`<a href>`,
-   * `window.location`, `window.open`) no puede llevar el header
-   * `Authorization: Bearer`, que es como viaja el access token en este front (en
-   * memoria, sin cookie de sesión propia). Por eso el front tiene que pedir esta
-   * URL por un GET autenticado (fetch/axios) y recién ahí navegar él mismo
-   * (`window.open(url)`) — el mismo motivo por el que el callback de abajo NO usa
-   * JWT y en cambio valida un `state` firmado: del otro lado de una navegación de
-   * browser no hay forma de garantizar un header custom.
+   * Carga o rota la credencial PROPIA de Mercado Pago del gym: access token de
+   * producción + secreto de webhook de SU integración. JSON normal (a
+   * diferencia de AFIP, acá no hay archivos) — mismo criterio "al menos una,
+   * mergea sobre lo existente" que `PUT /settings/afip/credenciales`.
    *
-   * El `state` va firmado (cifrado con la misma clave maestra de la app) con el
-   * `gymId` y un vencimiento corto — el callback lo valida sin depender de que la
-   * sesión JWT sobreviva el roundtrip por mercadopago.com, que es un origen
-   * distinto y puede perder la cookie según cómo quede armado el deploy.
+   * Sin OAuth desde el 22/08/2026: no hay app de plataforma que aprobar ni
+   * popup de login. El `mpUserId` no lo tipea el dueño — lo resuelve el caso de
+   * uso llamando a `GET /users/me` con el token que mandó, lo que de paso
+   * valida que el token sirve antes de guardarlo.
    */
-  router.get('/settings/mercadopago/connect', async (req: AuthenticatedRequest, res, next) => {
-    try {
-      const gymId = getTenantId(req);
-      const oauthService = construirMercadoPagoOAuthAdapter();
+  router.put(
+    '/settings/mercadopago/credenciales',
+    validateBody(updateMercadoPagoCredentialsSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const updatedGym = await updateMercadoPagoCredentialsUseCase.execute({
+          gymId: getTenantId(req),
+          ...req.body,
+        });
 
-      const state = encryptionService.encrypt(
-        JSON.stringify({ gymId, exp: Date.now() + CONNECT_STATE_TTL_MS })
-      );
-
-      res.json({ status: 'success', data: { url: oauthService.getAuthorizationUrl(state) } });
-    } catch (error) {
-      next(error);
+        res.json({ status: 'success', data: { mercadoPagoConfig: toSafeMercadoPagoConfig(updatedGym) } });
+      } catch (error) {
+        next(error);
+      }
     }
-  });
+  );
 
   /**
    * Desconecta la cuenta de Mercado Pago del gym. Se limpia con un objeto vacío

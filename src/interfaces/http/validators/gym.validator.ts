@@ -169,12 +169,21 @@ export const updateMembershipPlansSchema = z.object({
     }),
 });
 
-// GET /gyms/settings/mercadopago/callback — lo llama el navegador al volver de
-// mercadopago.com, no el front por su cuenta.
-export const mercadoPagoCallbackSchema = z.object({
-  code: z.string().min(1, 'code es requerido'),
-  state: z.string().min(1, 'state es requerido'),
-});
+// Credencial PROPIA de Mercado Pago del gym: access token de producción +
+// secreto de SU integración (para verificar el webhook). Sin OAuth desde el
+// 22/08/2026 — mismo criterio que updateAfipCredentialsSchema, pero acá no
+// hay archivos, así que viaja como JSON normal y no multipart.
+export const updateMercadoPagoCredentialsSchema = z
+  .object({
+    accessToken: z.string().min(1, 'El access token no puede estar vacío').optional(),
+    webhookSecret: z
+      .string()
+      .min(16, 'El secreto del webhook tiene que tener al menos 16 caracteres')
+      .optional(),
+  })
+  .refine((data) => data.accessToken !== undefined || data.webhookSecret !== undefined, {
+    message: 'Hay que enviar al menos una credencial (accessToken o webhookSecret)',
+  });
 
 export const loginSchema = z.object({
   email: z.string().email('Valid email required'),

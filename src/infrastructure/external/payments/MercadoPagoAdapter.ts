@@ -21,6 +21,25 @@ const TIMEOUT_MS = 15_000;
 export class MercadoPagoAdapter implements IPaymentProvider {
   constructor(private readonly accessToken: string) {}
 
+  /**
+   * `GET /users/me` con el access token propio del gym. Sirve dos propósitos a
+   * la vez: valida que el token es real (si no, MP responde 401 y esto lanza)
+   * y devuelve el `id` de la cuenta, que es el `user_id` que después trae el
+   * webhook de un pago.
+   */
+  async obtenerCuenta(): Promise<{ userId: string }> {
+    try {
+      const { data } = await axios.get(`${MP_API_BASE}/users/me`, {
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+        timeout: TIMEOUT_MS
+      });
+
+      return { userId: String(data.id) };
+    } catch (error: any) {
+      throw this.traducirError(error);
+    }
+  }
+
   async crearLinkPago(dto: {
     externalReference: string;
     monto: number;

@@ -1,14 +1,18 @@
-import { IGymRepository } from '../../../domain/repositories/IGymRepository';
 import { IRenewalRequestRepository } from '../../../domain/repositories/IRenewalRequestRepository';
 import { IPaymentProviderFactory } from '../../../domain/services/IPaymentProviderFactory';
 import { AplicarRenovacionUseCase } from '../client/AplicarRenovacionUseCase';
-import { ResolverMercadoPagoAccessTokenUseCase } from './ResolverMercadoPagoAccessTokenUseCase';
 
 interface ProcessWebhookDTO {
   type: string;
   dataId: string;
-  /** `user_id` del vendedor conectado, tal como viaja en el body del webhook. */
-  userId: string;
+  /**
+   * Ya resueltos por la ruta ANTES de llegar acá: encontrar el gym por su
+   * `user_id` de Mercado Pago y verificar la firma del webhook con el secreto
+   * de ESE gym son responsabilidades de borde (mapean a 200/503/401 distintos),
+   * no de este caso de uso — que solo confirma el pago y aplica la renovación.
+   */
+  gymId: string;
+  accessToken: string;
 }
 
 interface ResultadoWebhook {
@@ -28,10 +32,8 @@ interface ResultadoWebhook {
  */
 export class ProcessMercadoPagoWebhookUseCase {
   constructor(
-    private gymRepository: IGymRepository,
     private renewalRequestRepository: IRenewalRequestRepository,
     private paymentProviderFactory: IPaymentProviderFactory,
-    private resolverAccessToken: ResolverMercadoPagoAccessTokenUseCase,
     private aplicarRenovacion: AplicarRenovacionUseCase
   ) {}
 
@@ -40,15 +42,7 @@ export class ProcessMercadoPagoWebhookUseCase {
       return { procesado: false, motivo: `Notificación de tipo "${dto.type}", se ignora.` };
     }
 
-    // El webhook no trae `gymId`: el `user_id` del vendedor conectado es el único
-    // dato confiable para saber a qué tenant pertenece.
-    const gym = await this.gymRepository.findByMercadoPagoUserId(dto.userId);
-    if (!gym) {
-      return { procesado: false, motivo: `Ningún gym conectado con el user_id ${dto.userId}.` };
-    }
-
-    const accessToken = await this.resolverAccessToken.execute(gym.id);
-    const paymentProvider = this.paymentProviderFactory.create({ accessToken });
+    const paymentProvider = this.paymentProviderFactory.create({ accessToken: dto.accessToken });
 
     // Nunca se confía en el body del webhook a secas: se vuelve a pedir el pago
     // real a la API de Mercado Pago con la cuenta de ESE gym.
@@ -61,7 +55,7 @@ export class ProcessMercadoPagoWebhookUseCase {
     const renewalRequest = await this.renewalRequestRepository.findByExternalReference(
       pago.externalReference
     );
-    if (!renewalRequest || renewalRequest.gymId !== gym.id) {
+    if (!renewalRequest || renewalRequest.gymId !== dto.gymId) {
       return {
         procesado: false,
         motivo: `Ningún pedido de renovación para externalReference ${pago.externalReference}.`

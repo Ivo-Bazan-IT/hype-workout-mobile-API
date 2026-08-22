@@ -2,10 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { ProcessMercadoPagoWebhookUseCase } from '../../../src/application/use-cases/payments/ProcessMercadoPagoWebhookUseCase';
 
 function makeDeps() {
-  const gymRepository = {
-    findByMercadoPagoUserId: vi.fn().mockResolvedValue({ id: 'gym-123' }),
-  } as any;
-
   const renewalRequestRepository = {
     findByExternalReference: vi.fn(),
     update: vi.fn().mockResolvedValue({}),
@@ -18,20 +14,14 @@ function makeDeps() {
     create: vi.fn().mockReturnValue(paymentProvider),
   } as any;
 
-  const resolverAccessToken = {
-    execute: vi.fn().mockResolvedValue('access-token-vigente'),
-  } as any;
-
   const aplicarRenovacion = {
     execute: vi.fn().mockResolvedValue({}),
   } as any;
 
   return {
-    gymRepository,
     renewalRequestRepository,
     paymentProvider,
     paymentProviderFactory,
-    resolverAccessToken,
     aplicarRenovacion,
   };
 }
@@ -39,14 +29,27 @@ function makeDeps() {
 function build() {
   const deps = makeDeps();
   const useCase = new ProcessMercadoPagoWebhookUseCase(
-    deps.gymRepository,
     deps.renewalRequestRepository,
     deps.paymentProviderFactory,
-    deps.resolverAccessToken,
     deps.aplicarRenovacion
   );
   return { useCase, deps };
 }
+
+/**
+ * Desde el 22/08/2026 el gym y el accessToken ya vienen resueltos por la ruta
+ * (encontrar el gym por user_id y verificar la firma con su secreto son
+ * responsabilidades de borde). El caso de uso ya no busca al gym: por eso los
+ * tests que antes probaban "no procesa si ningún gym está conectado" se
+ * movieron a nivel ruta/e2e.
+ */
+const dto = (extra: Record<string, unknown> = {}) => ({
+  type: 'payment',
+  dataId: '1',
+  gymId: 'gym-123',
+  accessToken: 'access-token-vigente',
+  ...extra,
+});
 
 const renewalRequestPendiente = (extra: Record<string, unknown> = {}) => ({
   id: 'renewal-1',
@@ -62,17 +65,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
   it('ignora notificaciones que no son de tipo payment', async () => {
     const { useCase, deps } = build();
 
-    const resultado = await useCase.execute({ type: 'merchant_order', dataId: '1', userId: '999' });
-
-    expect(resultado.procesado).toBe(false);
-    expect(deps.gymRepository.findByMercadoPagoUserId).not.toHaveBeenCalled();
-  });
-
-  it('no procesa si ningún gym está conectado con ese user_id', async () => {
-    const { useCase, deps } = build();
-    deps.gymRepository.findByMercadoPagoUserId.mockResolvedValue(null);
-
-    const resultado = await useCase.execute({ type: 'payment', dataId: '1', userId: '999' });
+    const resultado = await useCase.execute(dto({ type: 'merchant_order' }));
 
     expect(resultado.procesado).toBe(false);
     expect(deps.paymentProviderFactory.create).not.toHaveBeenCalled();
@@ -88,9 +81,12 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
     });
     deps.renewalRequestRepository.findByExternalReference.mockResolvedValue(renewalRequestPendiente());
 
-    await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(deps.paymentProvider.obtenerPago).toHaveBeenCalledWith('pago-1');
+    expect(deps.paymentProviderFactory.create).toHaveBeenCalledWith({
+      accessToken: 'access-token-vigente',
+    });
   });
 
   it('aplica la renovación cuando el pago está aprobado', async () => {
@@ -104,7 +100,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
     const renewalRequest = renewalRequestPendiente();
     deps.renewalRequestRepository.findByExternalReference.mockResolvedValue(renewalRequest);
 
-    const resultado = await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    const resultado = await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(resultado.procesado).toBe(true);
     expect(deps.aplicarRenovacion.execute).toHaveBeenCalledWith(
@@ -132,7 +128,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
     });
     deps.renewalRequestRepository.findByExternalReference.mockResolvedValue(renewalRequestPendiente());
 
-    const resultado = await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    const resultado = await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(resultado.procesado).toBe(true);
     expect(deps.aplicarRenovacion.execute).not.toHaveBeenCalled();
@@ -153,7 +149,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
     });
     deps.renewalRequestRepository.findByExternalReference.mockResolvedValue(renewalRequestPendiente());
 
-    const resultado = await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    const resultado = await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(resultado.procesado).toBe(false);
     expect(deps.aplicarRenovacion.execute).not.toHaveBeenCalled();
@@ -172,7 +168,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
       renewalRequestPendiente({ estado: 'aprobado' })
     );
 
-    const resultado = await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    const resultado = await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(resultado.procesado).toBe(false);
     expect(deps.aplicarRenovacion.execute).not.toHaveBeenCalled();
@@ -190,7 +186,7 @@ describe('ProcessMercadoPagoWebhookUseCase', () => {
       renewalRequestPendiente({ gymId: 'otro-gym' })
     );
 
-    const resultado = await useCase.execute({ type: 'payment', dataId: 'pago-1', userId: '999' });
+    const resultado = await useCase.execute(dto({ dataId: 'pago-1' }));
 
     expect(resultado.procesado).toBe(false);
     expect(deps.aplicarRenovacion.execute).not.toHaveBeenCalled();

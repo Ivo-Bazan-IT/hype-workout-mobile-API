@@ -23,7 +23,10 @@ function makeDeps() {
   const gymRepository = {
     findById: vi.fn().mockResolvedValue(gymConectado([{ tipo: 'mensual', duracionDias: 30, monto: 10000, activo: true }])),
   } as any;
-  const gymSecretsRepo = { getWhatsappAccessToken: vi.fn().mockResolvedValue('wa-token') } as any;
+  const gymSecretsRepo = {
+    getWhatsappAccessToken: vi.fn().mockResolvedValue('wa-token'),
+    getMercadoPagoCredentials: vi.fn().mockResolvedValue({ accessToken: 'mp-access-token' }),
+  } as any;
   const renewalRequestRepository = {
     findPendienteByClientId: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockImplementation(async (input: any) => ({ id: 'renewal-1', ...input })),
@@ -35,7 +38,6 @@ function makeDeps() {
   const paymentProviderFactory = { create: vi.fn().mockReturnValue(paymentProvider) } as any;
   const whatsappProvider = { sendTextMessage: vi.fn().mockResolvedValue({ messageId: 'wamid-1' }) };
   const whatsappProviderFactory = { create: vi.fn().mockReturnValue(whatsappProvider) } as any;
-  const resolverAccessToken = { execute: vi.fn().mockResolvedValue('mp-access-token') } as any;
 
   return {
     clientRepository,
@@ -46,7 +48,6 @@ function makeDeps() {
     paymentProviderFactory,
     whatsappProvider,
     whatsappProviderFactory,
-    resolverAccessToken,
   };
 }
 
@@ -58,8 +59,7 @@ function build() {
     deps.gymSecretsRepo,
     deps.renewalRequestRepository,
     deps.paymentProviderFactory,
-    deps.whatsappProviderFactory,
-    deps.resolverAccessToken
+    deps.whatsappProviderFactory
   );
   return { useCase, deps };
 }
@@ -77,6 +77,15 @@ describe('CreateRenewalPaymentLinkUseCase', () => {
   it('lanza ValidationError si el gym no conectó Mercado Pago', async () => {
     const { useCase, deps } = build();
     deps.gymRepository.findById.mockResolvedValue({ ...gymConectado(), mercadoPagoConfig: undefined });
+
+    await expect(
+      useCase.execute({ clientId: 'client-1', gymId: 'gym-123', tipoPlan: 'mensual' })
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it('lanza ValidationError si el mpUserId está pero la credencial no descifra o se perdió', async () => {
+    const { useCase, deps } = build();
+    deps.gymSecretsRepo.getMercadoPagoCredentials.mockResolvedValue(null);
 
     await expect(
       useCase.execute({ clientId: 'client-1', gymId: 'gym-123', tipoPlan: 'mensual' })

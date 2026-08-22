@@ -16,16 +16,16 @@ const igualEnTiempoConstante = (a: string, b: string): boolean => {
  *
  * Formato del header: `ts=<timestamp>,v1=<hmac>`. El `v1` es un HMAC-SHA256,
  * calculado sobre el manifest `id:{data.id};request-id:{x-request-id};ts:{ts};`
- * con el secreto de la aplicación (Mercado Pago Developers > la app > Webhooks >
- * Configurar notificaciones).
+ * con el secreto de LA INTEGRACIÓN DEL GYM (Mercado Pago Developers > Tus
+ * integraciones > su app > Webhooks) — cada gym tiene el suyo, cargado junto
+ * con su access token por `PUT /gyms/settings/mercadopago/credenciales`.
  *
  * ⚠️ El formato del header (`ts=…,v1=…`) está confirmado contra la documentación
  * pública de Mercado Pago; el manifest exacto de más arriba es el que publican
  * sus guías de implementación, pero no se pudo confirmar contra un webhook real
  * en esta implementación (no hay cuenta de prueba conectada todavía). Verificar
- * contra el primer webhook real que llegue, con el secreto en
- * `MERCADOPAGO_WEBHOOK_SECRET` — mismo criterio de diligencia que se usó para
- * `AfipSdkOwnAccountAdapter`.
+ * contra el primer webhook real que llegue — mismo criterio de diligencia que
+ * se usó para `AfipSdkOwnAccountAdapter`.
  */
 export const verificarFirmaMercadoPago = (params: {
   xSignature: string;

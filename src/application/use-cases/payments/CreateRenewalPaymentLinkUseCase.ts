@@ -8,7 +8,6 @@ import { RenewalRequest } from '../../../domain/entities/RenewalRequest';
 import { Client } from '../../../domain/entities/Client';
 import { MembershipPlanType } from '../../../domain/entities/Gym';
 import { calcularNuevoVencimiento } from '../../../domain/billing/planesMembresia';
-import { ResolverMercadoPagoAccessTokenUseCase } from './ResolverMercadoPagoAccessTokenUseCase';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 
 interface CreateRenewalPaymentLinkDTO {
@@ -34,8 +33,7 @@ export class CreateRenewalPaymentLinkUseCase {
     private gymSecretsRepo: IGymSecretsRepository,
     private renewalRequestRepository: IRenewalRequestRepository,
     private paymentProviderFactory: IPaymentProviderFactory,
-    private whatsappProviderFactory: IWhatsappProviderFactory,
-    private resolverAccessToken: ResolverMercadoPagoAccessTokenUseCase
+    private whatsappProviderFactory: IWhatsappProviderFactory
   ) {}
 
   async execute(dto: CreateRenewalPaymentLinkDTO): Promise<RenewalRequest> {
@@ -50,7 +48,7 @@ export class CreateRenewalPaymentLinkUseCase {
     }
 
     if (!gym.mercadoPagoConfig?.mpUserId) {
-      throw new ValidationError('El gimnasio todavía no conectó su cuenta de Mercado Pago.');
+      throw new ValidationError('El gimnasio todavía no cargó su credencial de Mercado Pago.');
     }
 
     const plan = gym.membershipPlans.find((p) => p.tipo === dto.tipoPlan && p.activo);
@@ -85,8 +83,11 @@ export class CreateRenewalPaymentLinkUseCase {
       fechaVencimientoNueva: nuevaFechaVencimiento
     });
 
-    const accessToken = await this.resolverAccessToken.execute(dto.gymId);
-    const paymentProvider = this.paymentProviderFactory.create({ accessToken });
+    const credenciales = await this.gymSecretsRepo.getMercadoPagoCredentials(dto.gymId);
+    if (!credenciales) {
+      throw new ValidationError('El gimnasio todavía no cargó su credencial de Mercado Pago.');
+    }
+    const paymentProvider = this.paymentProviderFactory.create({ accessToken: credenciales.accessToken });
 
     const { paymentLinkId, initPoint } = await paymentProvider.crearLinkPago({
       externalReference,

@@ -107,28 +107,12 @@ const envSchema = z.object({
   }),
 
   // --- Mercado Pago (cobro de renovaciones por link) ---
-  /*
-   * Credenciales de la APP registrada en Mercado Pago Developers (client_id/
-   * client_secret propios de la plataforma, no de cada gym). Cada gym conecta su
-   * propia cuenta por OAuth vía `GET /gyms/settings/mercadopago/connect`, y estas
-   * tres son las que hacen falta para armar ese flujo.
-   *
-   * Opcionales, a diferencia de AFIP_SDK_ENVIRONMENT: la plataforma tiene que
-   * poder arrancar sin la feature activada. Faltan recién se paga al intentar
-   * `connect` (400) o al recibir un webhook sin secreto configurado (503) — mismo
-   * criterio "cerrado por default" que `internalAuthMiddleware`.
-   */
-  MERCADOPAGO_CLIENT_ID: z.string().optional(),
-  MERCADOPAGO_CLIENT_SECRET: z.string().optional(),
-  // Necesita ser una URL pública estable: depende del dominio propio (mismo
-  // bloqueante que la cookie de sesión). En local se puede probar con un túnel.
-  MERCADOPAGO_REDIRECT_URI: z.preprocess(
-    (valor) => (valor === '' ? undefined : valor),
-    z.string().url().optional()
-  ),
-  // Secreto de la app para validar la firma `x-signature` de los webhooks
-  // (Mercado Pago Developers > la app > Webhooks > Configurar notificaciones).
-  MERCADOPAGO_WEBHOOK_SECRET: z.string().min(16).optional(),
+  // No hay variables de entorno: desde el 22/08/2026 cada gym carga su propia
+  // credencial (access token + secreto de webhook de SU integración) por
+  // PUT /gyms/settings/mercadopago/credenciales, sin OAuth ni app de
+  // plataforma. Antes de esa fecha existían MERCADOPAGO_CLIENT_ID/SECRET/
+  // REDIRECT_URI/WEBHOOK_SECRET para el flujo OAuth — se eliminaron sin
+  // migración porque ningún gym real había conectado una cuenta todavía.
 
   // Security - Encryption key (32 bytes in hex = 64 chars)
   APP_MASTER_KEY: z.string().length(64).optional(),
