@@ -2,110 +2,104 @@ import { IClientRepository } from '../../../domain/repositories/IClientRepositor
 import { IGymRepository } from '../../../domain/repositories/IGymRepository';
 import { IInvoiceRepository } from '../../../domain/repositories/IInvoiceRepository';
 import { IMembershipEventRepository } from '../../../domain/repositories/IMembershipEventRepository';
+import { IRenewalRequestRepository } from '../../../domain/repositories/IRenewalRequestRepository';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
 import { Client } from '../../../domain/entities/Client';
-import { ClientTaxCondition, resolverComprobante } from '../../../domain/billing/types';
+import { MembershipPlanType } from '../../../domain/entities/Gym';
+import { calcularNuevoVencimiento } from '../../../domain/billing/planesMembresia';
+import { AplicarRenovacionUseCase } from './AplicarRenovacionUseCase';
 
 interface RenewClientDTO {
   clientId: string;
   gymId: string;
-  monto: number;
-  nuevaFechaVencimiento: Date;
+  /** Camino recomendado: resuelve monto y vencimiento desde `gym.membershipPlans`. */
+  tipoPlan?: MembershipPlanType;
+  /** Camino manual (venía de antes): para un monto que no calza con ningún plan
+   *  del catálogo (una promo, un ajuste). Exige `nuevaFechaVencimiento` también. */
+  monto?: number;
+  nuevaFechaVencimiento?: Date;
 }
 
+/**
+ * Renovación confirmada por el operador EN EL MOMENTO — cobro en efectivo o
+ * transferencia, a diferencia de `payments/ProcessMercadoPagoWebhookUseCase`, que
+ * confirma un pago recién cuando Mercado Pago avisa por webhook. Los dos aplican
+ * la renovación real a través del mismo `AplicarRenovacionUseCase`.
+ */
 export class RenewClientUseCase {
+  private readonly aplicarRenovacion: AplicarRenovacionUseCase;
+
   constructor(
     private clientRepository: IClientRepository,
     private gymRepository: IGymRepository,
-    private invoiceRepository: IInvoiceRepository,
-    private membershipEventRepository: IMembershipEventRepository
-  ) {}
+    invoiceRepository: IInvoiceRepository,
+    membershipEventRepository: IMembershipEventRepository,
+    private renewalRequestRepository: IRenewalRequestRepository
+  ) {
+    this.aplicarRenovacion = new AplicarRenovacionUseCase(
+      clientRepository,
+      gymRepository,
+      invoiceRepository,
+      membershipEventRepository
+    );
+  }
 
   async execute(dto: RenewClientDTO): Promise<Client> {
-    // Verificar que el cliente existe y pertenece al gym
-    const existingClient = await this.clientRepository.findById(dto.clientId, dto.gymId);
+    if (dto.tipoPlan === undefined && dto.monto === undefined) {
+      throw new ValidationError('Hay que indicar monto o tipoPlan');
+    }
 
-    if (!existingClient) {
+    const client = await this.clientRepository.findById(dto.clientId, dto.gymId);
+    if (!client) {
       throw new NotFoundError('Client');
     }
 
-    if (dto.monto <= 0) {
-      throw new ValidationError('Monto debe ser positivo');
-    }
+    let monto: number;
+    let nuevaFechaVencimiento: Date;
 
-    // Un único instante para el historial y para el evento: si cada uno llamara a
-    // `new Date()` por su cuenta quedarían desfasados por milisegundos y el stream
-    // dejaría de reconciliar con `historialRenovaciones`.
-    const fechaRenovacion = new Date();
-
-    // Agregar al historial de renovaciones
-    const nuevaRenovacion = {
-      fecha: fechaRenovacion,
-      monto: dto.monto
-    };
-
-    const historialRenovaciones = [...(existingClient.historialRenovaciones || []), nuevaRenovacion];
-    const esRecurrente = historialRenovaciones.length > 1;
-
-    // Actualizar el cliente
-    const clienteActualizado = await this.clientRepository.update(dto.clientId, dto.gymId, {
-      fechaVencimiento: dto.nuevaFechaVencimiento,
-      historialRenovaciones,
-      esRecurrente,
-      estado: 'activo'
-    });
-
-    // Cierra la ventana anterior y abre la nueva. Es el evento del que salen el
-    // churn (si hubo hueco), el MRR (monto sobre duración) y los ingresos del
-    // período: va antes de la facturación porque el KPI no depende de que AFIP
-    // conteste, y de hecho la mayoría de los gyms no tiene facturación activa.
-    await this.membershipEventRepository.create({
-      gymId: dto.gymId,
-      clientId: dto.clientId,
-      tipo: 'renovacion',
-      fecha: fechaRenovacion,
-      monto: dto.monto,
-      vencimientoAnterior: existingClient.fechaVencimiento,
-      vencimientoNuevo: dto.nuevaFechaVencimiento,
-      origen: 'operacion'
-    });
-
-    // Encolar la factura. Acá NO se habla con AFIP: se deja el comprobante en
-    // `pendiente` y lo emite el worker por su cuenta. Antes esta llamada era
-    // sincrónica y el socio esperaba en la ventanilla hasta 15 segundos —el timeout
-    // del adaptador— para que le renovaran la cuota, aunque la renovación en sí ya
-    // estuviera hecha y guardada.
-    try {
+    if (dto.tipoPlan !== undefined) {
       const gym = await this.gymRepository.findById(dto.gymId);
+      const plan = gym?.membershipPlans.find((p) => p.tipo === dto.tipoPlan && p.activo);
 
-      if (gym?.afipConfig?.isActive) {
-        // El comprobante sale de `resolverComprobante`, que mira DOS condiciones:
-        // la del gym (decide si hay Factura C sin más vuelta) y la del socio (decide
-        // entre A y B cuando el gym es Responsable Inscripto). Es solo la vista
-        // "pendiente": el valor que de verdad queda en el comprobante es el que
-        // devuelve AFIP al emitir, en `marcarEmitida`.
-        const comprobante = resolverComprobante(
-          gym.afipConfig.taxCondition,
-          existingClient.condicionFiscal ?? ClientTaxCondition.CONSUMIDOR_FINAL
+      if (!plan) {
+        throw new ValidationError(
+          `El gimnasio no tiene configurado (o activo) el plan "${dto.tipoPlan}". Cargalo en Configuración > Planes.`
         );
-
-        await this.invoiceRepository.create({
-          gymId: dto.gymId,
-          clientId: dto.clientId,
-          tipoComprobante: comprobante.nombre,
-          codigoTipoComprobante: comprobante.codigo,
-          monto: dto.monto,
-          descripcion: `Cuota Mensual - ${fechaRenovacion.toLocaleDateString('es-AR', { month: 'long' })}`,
-          estado: 'pendiente'
-        });
       }
-    } catch (error: any) {
-      // Lo único que puede fallar acá es la base. La renovación ya está registrada
-      // y el evento también, así que se deja constancia y se sigue: dejar al socio
-      // sin renovar por un problema de facturación sería el peor de los dos males.
-      console.error('❌ No se pudo encolar la factura de la renovación:', error);
+
+      monto = plan.monto;
+      nuevaFechaVencimiento = calcularNuevoVencimiento(client.fechaVencimiento, plan.duracionDias);
+    } else {
+      if (dto.monto! <= 0) {
+        throw new ValidationError('Monto debe ser positivo');
+      }
+      if (!dto.nuevaFechaVencimiento) {
+        throw new ValidationError('Hay que indicar nuevaFechaVencimiento junto con monto');
+      }
+      monto = dto.monto!;
+      nuevaFechaVencimiento = dto.nuevaFechaVencimiento;
     }
 
-    return clienteActualizado!;
+    // Un cobro confirmado reemplaza cualquier link de Mercado Pago que haya
+    // quedado en el aire para este socio: si no se cancela, alguien podría pagar
+    // ese link más tarde y el webhook aplicaría una segunda renovación sobre la
+    // misma cuota.
+    const pendiente = await this.renewalRequestRepository.findPendienteByClientId(
+      dto.clientId,
+      dto.gymId
+    );
+    if (pendiente) {
+      await this.renewalRequestRepository.update(pendiente.id, dto.gymId, {
+        estado: 'cancelado',
+        resueltoEn: new Date()
+      });
+    }
+
+    return this.aplicarRenovacion.execute({
+      clientId: dto.clientId,
+      gymId: dto.gymId,
+      monto,
+      nuevaFechaVencimiento
+    });
   }
 }

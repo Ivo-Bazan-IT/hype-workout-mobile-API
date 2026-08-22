@@ -24,11 +24,16 @@ function makeDeps(
   const membershipEventRepository = {
     create: vi.fn().mockResolvedValue({}),
   } as any;
+  const renewalRequestRepository = {
+    findPendienteByClientId: vi.fn().mockResolvedValue(null),
+    update: vi.fn().mockResolvedValue({}),
+  } as any;
   return {
     clientRepository,
     gymRepository,
     invoiceRepository,
     membershipEventRepository,
+    renewalRequestRepository,
   };
 }
 
@@ -41,7 +46,8 @@ function build(
     deps.clientRepository,
     deps.gymRepository,
     deps.invoiceRepository,
-    deps.membershipEventRepository
+    deps.membershipEventRepository,
+    deps.renewalRequestRepository
   );
   return { useCase, deps };
 }
@@ -296,6 +302,85 @@ describe('RenewClientUseCase', () => {
 
       expect(result.estado).toBe('activo');
       expect(result.fechaVencimiento).toEqual(new Date('2026-04-01T00:00:00.000Z'));
+    });
+  });
+
+  describe('tipoPlan (catálogo)', () => {
+    const gymConPlanes = (planes: Record<string, unknown>[]) => ({
+      id: 'gym-123',
+      afipConfig: undefined,
+      membershipPlans: planes,
+    });
+
+    it('resuelve monto y vencimiento desde el plan activo del catálogo', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(
+            socio({ fechaVencimiento: new Date('2026-03-01T00:00:00.000Z') })
+          ),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConPlanes([
+          { tipo: 'semestral', duracionDias: 180, monto: 50000, activo: true },
+        ])
+      );
+
+      const result = await useCase.execute({
+        clientId: 'client-123',
+        gymId: 'gym-123',
+        tipoPlan: 'semestral',
+      });
+
+      expect(result.historialRenovaciones.at(-1)).toMatchObject({ monto: 50000 });
+      expect(deps.membershipEventRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ monto: 50000 })
+      );
+    });
+
+    it('rechaza un tipoPlan que el gym no configuró (o que está inactivo)', async () => {
+      const useCase = build(
+        { findById: vi.fn().mockResolvedValue(socio()) },
+        gymConPlanes([{ tipo: 'mensual', duracionDias: 30, monto: 10000, activo: false }])
+      ).useCase;
+
+      await expect(
+        useCase.execute({ clientId: 'client-123', gymId: 'gym-123', tipoPlan: 'mensual' })
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('cancela cualquier link de Mercado Pago pendiente al confirmar el cobro', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConPlanes([{ tipo: 'mensual', duracionDias: 30, monto: 10000, activo: true }])
+      );
+      deps.renewalRequestRepository.findPendienteByClientId.mockResolvedValue({
+        id: 'renewal-request-1',
+      });
+
+      await useCase.execute({ clientId: 'client-123', gymId: 'gym-123', tipoPlan: 'mensual' });
+
+      expect(deps.renewalRequestRepository.update).toHaveBeenCalledWith(
+        'renewal-request-1',
+        'gym-123',
+        expect.objectContaining({ estado: 'cancelado' })
+      );
+    });
+
+    it('no toca el repositorio de pedidos si no hay ninguno pendiente', async () => {
+      const { useCase, deps } = build(
+        {
+          findById: vi.fn().mockResolvedValue(socio()),
+          update: vi.fn(async (id: string, gymId: string, data: any) => ({ id, gymId, ...data })),
+        },
+        gymConPlanes([{ tipo: 'mensual', duracionDias: 30, monto: 10000, activo: true }])
+      );
+
+      await useCase.execute({ clientId: 'client-123', gymId: 'gym-123', tipoPlan: 'mensual' });
+
+      expect(deps.renewalRequestRepository.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -106,6 +106,28 @@ export class MongoGymSecretsRepository implements IGymSecretsRepository {
     };
   }
 
+  /**
+   * Igual criterio que `getAfipCredentials`: el access token y el refresh token
+   * viajan juntos, cifrados en `Gym.mercadoPagoConfig`. `null` si el gym nunca
+   * conectó su cuenta.
+   */
+  async getMercadoPagoCredentials(
+    gymId: string
+  ): Promise<{ accessToken: string; refreshToken: string; expiraEn?: Date } | null> {
+    const gym = await GymModel.findById(gymId);
+    const mp = gym?.mercadoPagoConfig;
+
+    if (!mp?.encryptedAccessToken || !mp.encryptedRefreshToken) {
+      return null;
+    }
+
+    return {
+      accessToken: this.decryptOrThrow(mp.encryptedAccessToken, gymId, 'Mercado Pago access token'),
+      refreshToken: this.decryptOrThrow(mp.encryptedRefreshToken, gymId, 'Mercado Pago refresh token'),
+      expiraEn: mp.expiraEn
+    };
+  }
+
   private platformAiApiKey(provider: AiProvider): string | null {
     if (provider === 'deepseek') return process.env.DEEPSEEK_API_KEY || null;
     if (provider === 'openai') return process.env.OPENAI_API_KEY || null;

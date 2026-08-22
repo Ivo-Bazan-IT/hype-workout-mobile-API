@@ -100,6 +100,40 @@ export interface GoogleFormConfig {
   webhookSecretUpdatedAt?: Date;
 }
 
+export interface MercadoPagoConfig {
+  /** Access token OAuth de la cuenta del gym, cifrado con AES-256-GCM. NUNCA se expone por HTTP. */
+  encryptedAccessToken?: string;
+  /** Refresh token OAuth del gym, cifrado. Vive 180 días junto al access token. */
+  encryptedRefreshToken?: string;
+  /**
+   * Id del vendedor en Mercado Pago (`user_id` que devuelve `/oauth/token`).
+   *
+   * Es lo que permite identificar a qué gym pertenece un pago cuando llega el
+   * webhook: la notificación de MP no trae el `gymId`, pero sí el `user_id` del
+   * vendedor conectado, y eso es lo que se busca acá.
+   */
+  mpUserId?: string;
+  /** Vencimiento del access token, para saber cuándo hace falta refrescarlo. */
+  expiraEn?: Date;
+  conectadoEn?: Date;
+}
+
+export type MembershipPlanType = 'mensual' | 'trimestral' | 'semestral' | 'anual';
+
+/**
+ * Catálogo de precios del gym para la renovación (efectivo o Mercado Pago).
+ *
+ * El monto sale de acá y no se tipea a mano en cada renovación: así el operador
+ * no puede cobrar de más o de menos por error, y el link de pago y la factura
+ * después salen con el monto exacto.
+ */
+export interface MembershipPlan {
+  tipo: MembershipPlanType;
+  duracionDias: number;
+  monto: number;
+  activo: boolean;
+}
+
 export interface AfipConfig {
   puntoVenta: number;
   /**
@@ -154,6 +188,8 @@ export interface Gym {
    */
   timezone?: string;
   afipConfig?: AfipConfig;
+  mercadoPagoConfig?: MercadoPagoConfig;
+  membershipPlans: MembershipPlan[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -173,6 +209,8 @@ export class GymEntity implements Gym {
     public googleFormConfig: GoogleFormConfig = {},
     public timezone?: string,
     public afipConfig?: AfipConfig,
+    public mercadoPagoConfig?: MercadoPagoConfig,
+    public membershipPlans: MembershipPlan[] = [],
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -194,6 +232,8 @@ export class GymMapper {
       doc.googleFormConfig,
       doc.timezone,
       doc.afipConfig,
+      doc.mercadoPagoConfig,
+      doc.membershipPlans ?? [],
       doc.createdAt,
       doc.updatedAt
     );
@@ -214,6 +254,8 @@ export class GymMapper {
       googleFormConfig: entity.googleFormConfig,
       timezone: entity.timezone,
       afipConfig: entity.afipConfig,
+      mercadoPagoConfig: entity.mercadoPagoConfig,
+      membershipPlans: entity.membershipPlans,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

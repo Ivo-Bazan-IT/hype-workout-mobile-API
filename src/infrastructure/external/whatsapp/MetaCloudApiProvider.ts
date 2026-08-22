@@ -47,4 +47,23 @@ export class MetaCloudApiProvider implements IWhatsappProvider {
 
     return { messageId: sendRes.data.messages[0].id };
   }
+
+  async sendTextMessage(params: { to: string; text: string }): Promise<{ messageId: string }> {
+    const sendRes = await axios.post(
+      `https://graph.facebook.com/v20.0/${this.phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to: params.to,
+        type: 'text',
+        text: { body: params.text }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`
+        }
+      }
+    );
+
+    return { messageId: sendRes.data.messages[0].id };
+  }
 }

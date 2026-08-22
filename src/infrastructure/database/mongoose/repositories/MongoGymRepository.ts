@@ -53,6 +53,8 @@ export class MongoGymRepository implements IGymRepository {
     if (data.googleFormConfig !== undefined) updateData.googleFormConfig = data.googleFormConfig;
     if (data.timezone !== undefined) updateData.timezone = data.timezone;
     if (data.afipConfig !== undefined) updateData.afipConfig = data.afipConfig;
+    if (data.mercadoPagoConfig !== undefined) updateData.mercadoPagoConfig = data.mercadoPagoConfig;
+    if (data.membershipPlans !== undefined) updateData.membershipPlans = data.membershipPlans;
 
     const doc = await GymModel.findByIdAndUpdate(id, updateData, { new: true });
     return doc ? GymMapper.toDomain(doc) : null;
@@ -62,5 +64,10 @@ export class MongoGymRepository implements IGymRepository {
     // Soft delete - isActive = false
     const doc = await GymModel.findByIdAndUpdate(id, { isActive: false });
     return !!doc;
+  }
+
+  async findByMercadoPagoUserId(mpUserId: string): Promise<Gym | null> {
+    const doc = await GymModel.findOne({ 'mercadoPagoConfig.mpUserId': mpUserId });
+    return doc ? GymMapper.toDomain(doc) : null;
   }
 }

@@ -236,9 +236,18 @@ export class ClientController {
     try {
       const { id } = req.params;
       const gymId = getTenantId(req);
-      const { monto } = req.body;
+      const { monto, tipoPlan } = req.body;
 
-      // Calcular nueva fecha de vencimiento (30 días por defecto)
+      // `tipoPlan` es el camino recomendado: el caso de uso resuelve monto y
+      // vencimiento desde el catálogo de planes del gym. El camino manual (venía
+      // de antes) sigue existiendo para un monto que no calza con ningún plan, y
+      // mantiene el default histórico de 30 días.
+      if (tipoPlan !== undefined) {
+        const result = await this.renewClientUseCase.execute({ clientId: id, gymId, tipoPlan });
+        res.json({ status: 'success', data: result });
+        return;
+      }
+
       const nuevaFechaVencimiento = new Date();
       nuevaFechaVencimiento.setDate(nuevaFechaVencimiento.getDate() + 30);
 

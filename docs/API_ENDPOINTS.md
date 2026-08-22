@@ -10,7 +10,7 @@ documento tiene el bug.
 > actualizaba después de cada tanda, así que llegó a estar dos tandas atrasado: el
 > documento describe el backend y se invalida justo cuando el backend cambia, de modo
 > que conviene que viva al lado del código que lo invalida. Verificado archivo por
-> archivo el **2026-08-10**.
+> archivo el **2026-08-21**.
 
 ---
 
@@ -165,13 +165,13 @@ Requiere JWT. Devuelve `{ email, role, gymId }`.
 
 > JWT + rol `admin`.
 
-- **`GET /admin/gyms`** → array de gimnasios.
-- **`GET /admin/gyms/:id`** → el gimnasio.
-- **`POST /admin/gyms`** → `{ gym, user }`.
-- **`PUT /admin/gyms/:id`** → el gimnasio actualizado.
+- **`GET /admin/gyms`** → array de gimnasios, proyección **liviana** (ver abajo).
+- **`GET /admin/gyms/:id`** → el gimnasio, proyección **completa** (ver abajo).
+- **`POST /admin/gyms`** → `{ gym, user }`, ambos **reducidos** (ver abajo).
+- **`PUT /admin/gyms/:id`** → el gimnasio actualizado, proyección **completa**, igual que el `GET` por id.
 - **`DELETE /admin/gyms/:id`** → soft delete, `{ status, message }`.
 
-Body del alta:
+Body del alta — permite dejar el gym operativo con WhatsApp en una sola llamada:
 
 ```json
 {
@@ -185,6 +185,7 @@ Body del alta:
   "adminName": "string",
   "aiProvider": "openai | anthropic | deepseek (opcional)",
   "whatsappPhoneNumberId": "string (opcional)",
+  "whatsappAccessToken": "string (opcional)",
   "timezone": "string IANA (opcional)"
 }
 ```
@@ -200,17 +201,62 @@ Body de la edición — **todos opcionales**:
   "contactPhone": "string",
   "isActive": "boolean",
   "whatsappPhoneNumberId": "string",
+  "whatsappAccessToken": "string",
   "timezone": "string IANA",
-  "pdfTemplate": { "htmlTemplate": "string" }
+  "pdfTemplate": { "htmlTemplate": "string", "cssStyles": "string", "storagePath": "string" }
 }
 ```
 
-⚠️ **WhatsApp y la IA se editan por campos planos, no como objeto.** Mandar
-`whatsappConfig` o `aiConfig` enteros reemplazaría el objeto y borraría el token
-cifrado, que no viaja en el body por ser secreto. El prompt y la credencial de IA se
-editan por `PUT /gyms/settings/ai-prompt?gymId=<id>`, que hace merge.
+⚠️ **La IA se edita por campos planos, no como objeto.** Mandar `aiConfig` entero
+reemplazaría el objeto y borraría la API key cifrada, que no viaja en el body por ser
+secreto. El prompt y la credencial de IA se editan por
+`PUT /gyms/settings/ai-prompt?gymId=<id>`, que hace merge. `googleFormConfig` tampoco se
+edita por acá, por la misma razón (borraría `webhookSecretHash`): usar
+`PUT /gyms/settings/google-form` y `POST /gyms/settings/google-form/rotate-secret`.
+
+`whatsappPhoneNumberId`/`whatsappAccessToken` **sí** viajan como campos planos en este
+mismo body (a diferencia de `aiConfig`/`googleFormConfig`) porque `UpdateGymUseCase` los
+cifra y mergea antes de guardar — no reemplazan el objeto `whatsappConfig` entero.
 
 `timezone` inválida (nombre que no es IANA) devuelve `400`.
+
+**Las tres formas de response no son la misma proyección — ojo si el front las mezcla:**
+
+```jsonc
+// GET /admin/gyms (lista) — liviana, sin aiConfig/whatsappConfig/afipConfig/timezone
+{
+  "id": "string", "name": "string", "businessName": "string", "cuit": "string",
+  "contactEmail": "string", "contactPhone": "string", "isActive": "boolean",
+  "createdAt": "ISO instante", "updatedAt": "ISO instante"
+}
+```
+
+```jsonc
+// GET /admin/gyms/:id y PUT /admin/gyms/:id — proyección completa
+{
+  "id": "string", "name": "string", "businessName": "string", "cuit": "string",
+  "contactEmail": "string", "contactPhone": "string", "isActive": "boolean",
+  "aiConfig": { "provider": "string | undefined", "model": "string | undefined", "hasApiKey": "boolean" },
+  "whatsappConfig": { "phoneNumberId": "string", "hasAccessToken": "boolean" },
+  "googleFormConfig": { "formId": "string | undefined" },
+  "timezone": "string | undefined",
+  "afipConfig": { "puntoVenta": "number", "taxCondition": "string", "isActive": "boolean" } | "undefined",
+  "createdAt": "ISO instante", "updatedAt": "ISO instante"
+}
+```
+
+⚠️ Acá `aiConfig` **no** trae `promptTemplate`/`usaPromptStandard` (a diferencia de
+`GET /gyms/settings` §5), `googleFormConfig` **solo** trae `formId` (sin `formUrl`,
+`documentoEntryId`, etc.) y `afipConfig` **no** trae los `has*`/`credencialesActualizadasEn`.
+Son proyecciones de admin, no las mismas que ve el propio gimnasio.
+
+```jsonc
+// POST /admin/gyms — subconjunto reducido, no el gym/user completos
+{
+  "gym": { "id": "string", "name": "string", "businessName": "string", "cuit": "string" },
+  "user": { "id": "string", "email": "string", "name": "string" }
+}
+```
 
 ---
 
@@ -259,6 +305,8 @@ de WhatsApp, ni la API key de IA, ni la de AFIP, ni el hash del secreto del webh
     "whatsappPhoneNumberId": "string | null",
     "googleFormConfig": {
       "formId": "string | null",
+      "formUrl": "string | null",
+      "documentoEntryId": "string | null",
       "hasWebhookSecret": "boolean",
       "webhookSecretUpdatedAt": "ISO instante | null",
       "fieldMapping": { }
@@ -272,6 +320,13 @@ de WhatsApp, ni la API key de IA, ni la de AFIP, ni el hash del secreto del webh
       "hasKey": "boolean",
       "credencialesActualizadasEn": "ISO instante | null"
     },
+    "mercadoPagoConfig": {
+      "conectado": "boolean",
+      "conectadoEn": "ISO instante | null"
+    },
+    "membershipPlans": [
+      { "tipo": "mensual | trimestral | semestral | anual", "duracionDias": "number", "monto": "number (PESOS)", "activo": "boolean" }
+    ],
     "createdAt": "ISO instante",
     "updatedAt": "ISO instante"
   }
@@ -386,6 +441,99 @@ Devuelve `{ googleFormConfig }` con la forma segura.
 hasheado: si el gym no lo copia acá, no lo recupera y tiene que rotar de nuevo. Rotar
 **invalida el anterior**, así que el Apps Script empieza a recibir `401` hasta que
 alguien pegue el nuevo. Es `POST` y no `PUT` porque no es idempotente.
+
+### `GET /gyms/settings/mercadopago/connect` — "Conectar con Mercado Pago"
+
+**Devuelve JSON con la URL, no redirige.** Esta ruta está detrás de `authMiddleware` como
+el resto de `/gyms/settings/*`, y una navegación real del browser (`<a href>`,
+`window.location`, `window.open`) **no puede llevar el header `Authorization: Bearer`** —
+eso solo lo hace un `fetch`/axios. Por eso el contrato es:
+
+```json
+{ "status": "success", "data": { "url": "https://auth.mercadopago.com/authorization?..." } }
+```
+
+El front pide esta URL con un **GET autenticado normal** (axios, como cualquier otro
+endpoint) y recién con la respuesta en la mano navega él mismo —`window.open(data.url)` o
+`window.location.href = data.url`—. A partir de ahí ya es una navegación de browser común:
+el dueño inicia sesión en Mercado Pago y termina en el callback público (§5 bis), que es
+quien finalmente confirma la conexión. El front no ve ni maneja el `code` ni el `state`.
+
+Con el gym ya conectado, volver a llamarlo simplemente **reconecta** (útil si el dueño
+quiere cambiar de cuenta de Mercado Pago).
+
+`400` si la plataforma no tiene `MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`
+configuradas (ver §5 bis).
+
+### `DELETE /gyms/settings/mercadopago`
+
+Desconecta la cuenta. `{ status, message }`. Después de esto, `GET /gyms/settings` vuelve
+a mostrar `mercadoPagoConfig: { conectado: false, conectadoEn: null }`, y
+`POST /clients/:id/renewal-requests` empieza a rechazar con `400` hasta que se reconecte.
+
+### `PUT /gyms/settings/membership-plans`
+
+Reemplaza el catálogo **completo** (no mergea, a diferencia de `ai-prompt`/`whatsapp`): el
+front manda la lista entera cada vez, igual que `pdfTemplate`.
+
+```json
+{
+  "planes": [
+    { "tipo": "mensual", "duracionDias": 30, "monto": 15000, "activo": true },
+    { "tipo": "trimestral", "duracionDias": 90, "monto": 40000, "activo": true },
+    { "tipo": "semestral", "duracionDias": 180, "monto": 70000, "activo": false },
+    { "tipo": "anual", "duracionDias": 365, "monto": 130000, "activo": true }
+  ]
+}
+```
+
+Devuelve `{ membershipPlans }`. `400` si hay dos planes con el mismo `tipo`, o si algún
+`monto`/`duracionDias` no es positivo. **No hace falta cargar los cuatro tipos**: un gym
+puede tener solo `mensual` configurado, y los demás simplemente no aparecen como opción al
+elegir plan.
+
+Este catálogo alimenta **dos caminos de cobro**, no solo Mercado Pago: también
+`POST /clients/:id/renew` con `tipoPlan` (§6), para que un cobro en efectivo calcule el
+mismo monto y la misma duración sin que el operador tenga que tipearlos a mano.
+
+---
+
+## 5 bis. Mercado Pago — callback y webhook (público, no los llama el front por fetch)
+
+Dos superficies sin JWT, porque del otro lado no hay un usuario logueado: el navegador
+volviendo de mercadopago.com, y Mercado Pago avisando un pago. El resto de la integración
+(conectar, desconectar, catálogo, pedir un link) sí requiere sesión y está en §5/§6.
+
+### `GET /mercadopago/callback`
+
+Query: `code`, `state` (los arma Mercado Pago solo, redirigiendo desde la pantalla de
+autorización — nunca los arma el front).
+
+```json
+{ "status": "success", "data": { "message": "Cuenta de Mercado Pago conectada correctamente. Ya podés cerrar esta pestaña." } }
+```
+
+⚠️ **No hay redirect a una pantalla del front.** Devuelve JSON plano porque este endpoint
+no conoce la URL del front (no hay dominio propio todavía, ver D1 en
+`BACKEND-requerimientos-dashboard.md`). Si `GET /gyms/settings/mercadopago/connect` se abrió
+en una pestaña nueva, esta pantalla de confirmación queda ahí — el front puede pollear
+`GET /gyms/settings` (`mercadoPagoConfig.conectado`) desde la pestaña original para
+enterarse de que ya se conectó, o simplemente pedirle al dueño que vuelva y refresque.
+
+`400` si el `state` es inválido o venció (dura 10 minutos, igual que el `code` de Mercado
+Pago).
+
+### `POST /mercadopago/webhook`
+
+**El front nunca lo llama.** Lo dispara Mercado Pago cuando un pago cambia de estado.
+Verifica la firma `x-signature`/`x-request-id` con `MERCADOPAGO_WEBHOOK_SECRET`; sin ese
+secreto configurado responde `503` (cerrado por default, no abierto), y con una firma que
+no calza, `401`.
+
+No hay nada que el front tenga que integrar acá — se documenta para que quede claro que
+existe y por qué una renovación por Mercado Pago tarda unos segundos en reflejarse: el
+pago se confirma de forma asíncrona, no en la respuesta de
+`POST /clients/:id/renewal-requests`.
 
 ---
 
@@ -537,10 +685,84 @@ Escribe dos fechas con reglas distintas:
 | Socio sin `telefono` | `400` — no hay a dónde mandarlo, y el sello mentiría |
 | Cliente de otro gym | `404` |
 
-### `POST /clients/:id/renew`
+### `POST /clients/:id/renew` — cobro en efectivo/transferencia, EN EL MOMENTO
 
-Body `{ "monto": number }` (positivo, **en pesos**). Extiende el vencimiento 30 días y
-deja el evento de membresía del que salen los KPIs.
+Confirma un cobro que **ya ocurrió** (el operador tiene la plata o la transferencia ya
+llegó) y aplica la renovación al instante — a diferencia de
+`POST /clients/:id/renewal-requests` (más abajo), que no renueva nada hasta que Mercado
+Pago confirma el pago.
+
+**Dos formas de body, la primera es la recomendada:**
+
+```jsonc
+// Por catálogo — resuelve monto y vencimiento desde gym.membershipPlans (§5)
+{ "tipoPlan": "mensual" | "trimestral" | "semestral" | "anual" }
+```
+
+```jsonc
+// Manual — para un monto que no calza con ningún plan del catálogo (una promo, un
+// ajuste). A diferencia de tipoPlan, extiende siempre 30 días desde HOY, no desde
+// el vencimiento del socio.
+{ "monto": "number (positivo, PESOS)" }
+```
+
+Hay que mandar **uno de los dos**, no ninguno. `400` si `tipoPlan` no está configurado (o
+está `activo: false`) en el catálogo del gym.
+
+Deja el evento de membresía del que salen los KPIs, y si el gym factura, encola el
+comprobante — igual que siempre. Además: **si el socio tenía un link de Mercado Pago
+pendiente, este endpoint lo cancela** (queda `estado: "cancelado"` en su historial). Es a
+propósito — un cobro en efectivo confirmado reemplaza cualquier link todavía cobrable, para
+que el socio no termine pagando la misma cuota dos veces si abre el link viejo por error.
+
+### `POST /clients/:id/renewal-requests` — pedir un link de pago de Mercado Pago
+
+```json
+{ "tipoPlan": "mensual" | "trimestral" | "semestral" | "anual" }
+```
+
+**Siempre por catálogo** (no acepta `monto` suelto): no tiene sentido generar un link por
+un importe que el gym no definió como plan. `400` si el gym no conectó Mercado Pago
+(§5/§5 bis) o si el `tipoPlan` no está configurado.
+
+```jsonc
+// Response 201
+{
+  "status": "success",
+  "data": {
+    "id": "string",
+    "clientId": "string",
+    "plan": { "tipo": "mensual", "duracionDias": 30, "monto": 15000 },
+    "externalReference": "string (uuid)",
+    "initPoint": "string (URL — es lo que se le mandó al socio por WhatsApp)",
+    "estado": "pendiente",
+    "fechaVencimientoAnterior": "ISO instante",
+    "fechaVencimientoNueva": "ISO instante (ya calculada — se aplica tal cual cuando MP confirme)",
+    "createdAt": "ISO instante"
+  }
+}
+```
+
+⚠️ **Esto NO renueva al socio.** `Client.estado`/`fechaVencimiento` no cambian acá: la
+renovación real la aplica el webhook (§5 bis) recién cuando Mercado Pago confirma el pago,
+en segundo plano. El front tiene que mostrar "link enviado, esperando pago" y no un check
+verde.
+
+El link también se manda por WhatsApp automáticamente (mismo mecanismo que las rutinas)
+si el socio tiene `telefono` cargado — si no, o si falla el envío, el link igual queda
+válido y se puede compartir a mano copiando `initPoint`.
+
+**Pedir un link nuevo cancela cualquier link pendiente anterior** del mismo socio: no
+pueden convivir dos links cobrables a la vez.
+
+### `GET /clients/:id/renewal-requests`
+
+Query: `estado?` (`pendiente|aprobado|rechazado|expirado|cancelado`), `page` (1), `limit`
+(20). Devuelve `PaginatedResult<RenewalRequest>` (mismo anidado de §1.1, misma forma que
+la respuesta de arriba). Es de acá de donde el front deriva el badge "Renovación
+Pendiente (Semestral)" en el listado — **no existe un campo así en `Client`**, a propósito:
+así los cálculos de churn/MRR de los KPIs (que sí miran `Client.estado`) no se ven
+afectados por un link todavía sin pagar.
 
 ### `DELETE /clients/:id`
 

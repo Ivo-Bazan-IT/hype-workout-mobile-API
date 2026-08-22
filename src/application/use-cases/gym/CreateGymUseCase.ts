@@ -81,6 +81,9 @@ export class CreateGymUseCase {
       // Sin valor por defecto: "no configurada" es un estado distinto de "eligió
       // Buenos Aires", y los endpoints que agrupan por hora devuelven cuál usaron.
       timezone: dto.timezone,
+      // Sin planes ni Mercado Pago conectado: el dueño los carga después desde
+      // Configuración, igual que el resto de las integraciones opcionales.
+      membershipPlans: [],
     });
 
     // Crear usuario admin del gym

@@ -52,6 +52,19 @@ export interface GymDocument {
     credencialesActualizadasEn?: Date;
     isActive: boolean;
   };
+  mercadoPagoConfig?: {
+    encryptedAccessToken?: string; // AES-256-GCM encrypted (OAuth propio del gym)
+    encryptedRefreshToken?: string; // AES-256-GCM encrypted
+    mpUserId?: string; // user_id de MP del vendedor conectado — clave del webhook
+    expiraEn?: Date;
+    conectadoEn?: Date;
+  };
+  membershipPlans: {
+    tipo: 'mensual' | 'trimestral' | 'semestral' | 'anual';
+    duracionDias: number;
+    monto: number;
+    activo: boolean;
+  }[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -134,6 +147,32 @@ const gymSchema = new Schema<GymDocument>({
     encryptedKey: { type: String },
     credencialesActualizadasEn: { type: Date },
     isActive: { type: Boolean, default: false }
+  },
+
+  // Conexión OAuth con la cuenta de Mercado Pago del gym. Sin `default` a nivel
+  // objeto, a propósito: un gym que nunca conectó no tiene ninguno de estos campos,
+  // ni siquiera un objeto vacío — es la señal que usa el front para mostrar
+  // "no conectado" en vez de un formulario a medio completar.
+  mercadoPagoConfig: {
+    encryptedAccessToken: { type: String },
+    encryptedRefreshToken: { type: String },
+    mpUserId: { type: String, index: true },
+    expiraEn: { type: Date },
+    conectadoEn: { type: Date },
+  },
+
+  // Catálogo de precios por plan. Alimenta tanto el link de Mercado Pago como la
+  // renovación manual en efectivo (POST /clients/:id/renew con tipoPlan).
+  membershipPlans: {
+    type: [
+      {
+        tipo: { type: String, enum: ['mensual', 'trimestral', 'semestral', 'anual'], required: true },
+        duracionDias: { type: Number, required: true },
+        monto: { type: Number, required: true },
+        activo: { type: Boolean, default: true },
+      },
+    ],
+    default: [],
   },
 }, { timestamps: true });
 

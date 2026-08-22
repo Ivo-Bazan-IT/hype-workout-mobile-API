@@ -8,6 +8,13 @@ export interface IGymRepository {
   findAll(): Promise<Gym[]>;
   update(id: string, data: Partial<Gym>): Promise<Gym | null>;
   delete(id: string): Promise<boolean>; // soft delete (isActive = false)
+  /**
+   * Identifica al gym por el `user_id` que Mercado Pago le asignó a su cuenta
+   * conectada. Es el único dato confiable que trae el webhook de un pago: la
+   * notificación no incluye `gymId`, así que este es el punto de entrada para
+   * saber con qué tenant hablar antes de poder confirmar nada más.
+   */
+  findByMercadoPagoUserId(mpUserId: string): Promise<Gym | null>;
 }
 
 // Interface for secrets management - not stored in DB
@@ -44,4 +51,13 @@ export interface IGymSecretsRepository {
   getAfipCredentials(
     gymId: string
   ): Promise<{ accessToken: string; cert: string; key: string } | null>;
+
+  /**
+   * Credenciales OAuth de Mercado Pago del gym (cuenta propia, conectada por
+   * `PUT /gyms/settings/mercadopago/callback`). `null` si el gym nunca conectó su
+   * cuenta.
+   */
+  getMercadoPagoCredentials(
+    gymId: string
+  ): Promise<{ accessToken: string; refreshToken: string; expiraEn?: Date } | null>;
 }

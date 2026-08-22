@@ -152,6 +152,30 @@ export const updateAfipCredentialsSchema = z.object({
   apiKey: z.string().min(1, 'API key no puede estar vacía').optional(),
 });
 
+// El catálogo se reemplaza ENTERO (mismo criterio que pdfTemplate), no se
+// mergea: es una lista chica y el front la edita completa en una pantalla.
+export const updateMembershipPlansSchema = z.object({
+  planes: z
+    .array(
+      z.object({
+        tipo: z.enum(['mensual', 'trimestral', 'semestral', 'anual']),
+        duracionDias: z.number().int().positive(),
+        monto: z.number().positive(),
+        activo: z.boolean().default(true),
+      })
+    )
+    .refine((planes) => new Set(planes.map((p) => p.tipo)).size === planes.length, {
+      message: 'No puede haber dos planes con el mismo tipo',
+    }),
+});
+
+// GET /gyms/settings/mercadopago/callback — lo llama el navegador al volver de
+// mercadopago.com, no el front por su cuenta.
+export const mercadoPagoCallbackSchema = z.object({
+  code: z.string().min(1, 'code es requerido'),
+  state: z.string().min(1, 'state es requerido'),
+});
+
 export const loginSchema = z.object({
   email: z.string().email('Valid email required'),
   password: z.string().min(1, 'Password is required'),

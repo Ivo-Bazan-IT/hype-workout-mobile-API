@@ -251,6 +251,9 @@ describe('GenerateRoutineUseCase', () => {
   });
 
   it('genera el PDF con la plantilla standard estampada sobre su fondo', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 19, 10, 0, 0));
+
     const mocks = buildMocks();
     const useCase = buildUseCase(mocks);
 

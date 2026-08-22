@@ -12,4 +12,10 @@ export interface IWhatsappProvider {
     pdfBuffer: Buffer;
     filename: string;
   }): Promise<{ messageId: string }>;
+
+  /**
+   * Envía un mensaje de texto plano. Lo usa el link de pago de la renovación: no
+   * hay archivo que adjuntar, solo una URL que el socio abre para pagar.
+   */
+  sendTextMessage(params: { to: string; text: string }): Promise<{ messageId: string }>;
 }

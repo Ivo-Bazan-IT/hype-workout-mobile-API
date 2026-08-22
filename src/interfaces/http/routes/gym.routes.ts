@@ -11,12 +11,15 @@ import { UpdateAiConfigUseCase } from '../../../application/use-cases/gym/Update
 import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/UpdateWhatsappConfigUseCase';
 import { UpdateGoogleFormConfigUseCase } from '../../../application/use-cases/gym/UpdateGoogleFormConfigUseCase';
 import { RotateGoogleFormSecretUseCase } from '../../../application/use-cases/gym/RotateGoogleFormSecretUseCase';
+import { UpdateMembershipPlansUseCase } from '../../../application/use-cases/gym/UpdateMembershipPlansUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
 import { BcryptWebhookSecretService } from '../../../infrastructure/encryption/BcryptWebhookSecretService';
+import { MercadoPagoOAuthAdapter } from '../../../infrastructure/external/payments/MercadoPagoOAuthAdapter';
 import { Gym } from '../../../domain/entities/Gym';
 import { resolverPromptTemplate } from '../../../domain/prompt/promptStandard';
+import { env } from '../../../config/env';
 import {
   createGymSchema,
   updateGymSchema,
@@ -25,11 +28,29 @@ import {
   updateAiConfigSchema,
   updateWhatsappConfigSchema,
   updateGoogleFormConfigSchema,
+  updateMembershipPlansSchema,
 } from '../validators/gym.validator';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
 import { NotFoundError, ValidationError } from '../../../shared/errors/AppError';
+
+/** Cuánto dura el `state` firmado del "Conectar con Mercado Pago" antes de que el
+ *  callback lo rechace. El code de MP en sí vive 10 minutos; con esto alcanza. */
+const CONNECT_STATE_TTL_MS = 10 * 60_000;
+
+const construirMercadoPagoOAuthAdapter = (): MercadoPagoOAuthAdapter => {
+  if (!env.MERCADOPAGO_CLIENT_ID || !env.MERCADOPAGO_CLIENT_SECRET || !env.MERCADOPAGO_REDIRECT_URI) {
+    throw new ValidationError(
+      'Mercado Pago no está configurado en la plataforma (faltan MERCADOPAGO_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI).'
+    );
+  }
+  return new MercadoPagoOAuthAdapter(
+    env.MERCADOPAGO_CLIENT_ID,
+    env.MERCADOPAGO_CLIENT_SECRET,
+    env.MERCADOPAGO_REDIRECT_URI
+  );
+};
 
 const createAdminGymRouter = () => {
   const router = Router();
@@ -142,6 +163,14 @@ const toSafeGoogleFormConfig = (gym: Gym) => ({
   fieldMapping: gym.googleFormConfig?.fieldMapping ?? {},
 });
 
+// Igual criterio que `toSafeAfipConfig`: nunca se devuelve el token, solo si la
+// conexión existe y desde cuándo — lo único que la pantalla necesita para
+// mostrar "Conectado ✓" u ofrecer el botón de conectar.
+const toSafeMercadoPagoConfig = (gym: Gym) => ({
+  conectado: Boolean(gym.mercadoPagoConfig?.mpUserId),
+  conectadoEn: gym.mercadoPagoConfig?.conectadoEn ?? null,
+});
+
 const createUserGymRouter = () => {
   const router = Router();
 
@@ -160,6 +189,7 @@ const createUserGymRouter = () => {
     gymRepository,
     new BcryptWebhookSecretService()
   );
+  const updateMembershipPlansUseCase = new UpdateMembershipPlansUseCase(gymRepository);
 
   router.get('/settings', async (req: AuthenticatedRequest, res, next) => {
     try {
@@ -188,6 +218,9 @@ const createUserGymRouter = () => {
         whatsappPhoneNumberId: gym.whatsappConfig?.phoneNumberId ?? null,
         googleFormConfig: toSafeGoogleFormConfig(gym),
         afipConfig: toSafeAfipConfig(gym),
+        mercadoPagoConfig: toSafeMercadoPagoConfig(gym),
+        // No es sensible: es el catálogo de precios que arma el propio dueño.
+        membershipPlans: gym.membershipPlans,
         createdAt: gym.createdAt,
         updatedAt: gym.updatedAt,
       };
@@ -348,6 +381,72 @@ const createUserGymRouter = () => {
         });
 
         res.json({ status: 'success', data: { afipConfig: toSafeAfipConfig(updatedGym) } });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  /**
+   * "Conectar con Mercado Pago": arma la URL de autorización y la devuelve como
+   * JSON — **no redirige del lado del servidor**. Esta ruta vive detrás de
+   * `authMiddleware`, y una navegación real del browser (`<a href>`,
+   * `window.location`, `window.open`) no puede llevar el header
+   * `Authorization: Bearer`, que es como viaja el access token en este front (en
+   * memoria, sin cookie de sesión propia). Por eso el front tiene que pedir esta
+   * URL por un GET autenticado (fetch/axios) y recién ahí navegar él mismo
+   * (`window.open(url)`) — el mismo motivo por el que el callback de abajo NO usa
+   * JWT y en cambio valida un `state` firmado: del otro lado de una navegación de
+   * browser no hay forma de garantizar un header custom.
+   *
+   * El `state` va firmado (cifrado con la misma clave maestra de la app) con el
+   * `gymId` y un vencimiento corto — el callback lo valida sin depender de que la
+   * sesión JWT sobreviva el roundtrip por mercadopago.com, que es un origen
+   * distinto y puede perder la cookie según cómo quede armado el deploy.
+   */
+  router.get('/settings/mercadopago/connect', async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const gymId = getTenantId(req);
+      const oauthService = construirMercadoPagoOAuthAdapter();
+
+      const state = encryptionService.encrypt(
+        JSON.stringify({ gymId, exp: Date.now() + CONNECT_STATE_TTL_MS })
+      );
+
+      res.json({ status: 'success', data: { url: oauthService.getAuthorizationUrl(state) } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * Desconecta la cuenta de Mercado Pago del gym. Se limpia con un objeto vacío
+   * y no con `undefined`: el repositorio solo pisa `mercadoPagoConfig` cuando el
+   * campo viene definido en el `data` (mismo allowlist que el resto de `update`),
+   * así que un `undefined` explícito no haría nada.
+   */
+  router.delete('/settings/mercadopago', async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const gymId = getTenantId(req);
+      await gymRepository.update(gymId, { mercadoPagoConfig: {} });
+
+      res.json({ status: 'success', message: 'Cuenta de Mercado Pago desconectada.' });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put(
+    '/settings/membership-plans',
+    validateBody(updateMembershipPlansSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const updatedGym = await updateMembershipPlansUseCase.execute({
+          gymId: getTenantId(req),
+          planes: req.body.planes,
+        });
+
+        res.json({ status: 'success', data: { membershipPlans: updatedGym.membershipPlans } });
       } catch (error) {
         next(error);
       }

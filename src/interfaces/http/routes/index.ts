@@ -10,6 +10,7 @@ import { createAiUsageRoutes } from './aiUsage.routes';
 import { createDashboardRouter } from './dashboard.routes';
 import { createAdminUserRoutes } from './user.routes';
 import { internalRoutes } from './internal.routes';
+import { mercadoPagoPublicRoutes } from './mercadopago.routes';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { requireAdmin } from '../middlewares/roleMiddleware';
@@ -25,6 +26,12 @@ router.use('/onboarding', onboardingRoutes);
 // No es una ruta pública — la protege `internalAuthMiddleware` con un secreto
 // propio— pero sí tiene que quedar fuera del `authMiddleware` de abajo.
 router.use('/internal', internalRoutes);
+// Callback OAuth (el navegador volviendo de mercadopago.com) y webhook de pagos
+// (lo llama Mercado Pago): ninguno de los dos trae JWT. El callback se protege
+// con un `state` firmado y el webhook con la firma `x-signature` — ver
+// `mercadopago.routes.ts`. El resto de la integración (conectar, catálogo de
+// planes, pedir un link) sí requiere sesión y vive más abajo.
+router.use('/mercadopago', mercadoPagoPublicRoutes);
 
 // Protected routes - require authentication
 router.use(authMiddleware);

@@ -1,26 +1,40 @@
 # Requerimientos del backend — orden de trabajo
 
-> Actualizado el **2026-08-20**: la facturación **volvió a cuenta propia por gimnasio** —se
-> revirtió la cuenta única del 19-08, ver [§2 sexies](#2-sexies-hecho-el-20-08--vuelta-a-cuenta-propia-factura-a-y-credenciales-por-gym-)—,
-> se agregó **Factura A** (no existía) y cada gym ahora carga su propia credencial de AFIP
-> SDK (`apiKey` + `.crt` + `.key`) por un endpoint nuevo. El modo viejo de cuenta única
-> **sigue en el código, desconectado** detrás de `AFIP_BILLING_MODE`, por si se retoma.
+> **Actualizado el 2026-08-21 (front):** **F1, F2 y F3 quedaron implementadas y
+> verificadas en vivo contra este backend** — ver
+> [§2 octies](#2-octies-hecho-el-21-08-frontend--f1-f2-y-f3-implementadas-y-verificadas-en-vivo-).
+> Ya no hay ninguna pantalla de front pendiente en el tablero. Lo único que sigue abierto
+> es configuración/pruebas manuales, no código: correr los dos scripts
+> ([S1](#01-correr-los-dos-scripts-contra-la-base-)), probar AFIP y Mercado Pago contra
+> cuentas de test reales ([0.2](#02-probar-la-facturación-contra-el-homologación-de-arca-)/
+> [0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)), y las dos decisiones de
+> infraestructura (D1/D2).
 >
-> **Lo único abierto del lado del código es la pantalla de facturación del front**
-> ([F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio)). Esa sección es
-> ahora la especificación completa **y la guía de testing** — contratos, curl de ejemplo y
-> guiones paso a paso para probar Factura A, B y C tanto por API como dentro de la app. El
-> backend está listo y probado de punta a punta (777 tests, `tsc` y build limpios).
+> Actualizado el **2026-08-21**: se agregó la **pasarela de pago con Mercado Pago** para
+> renovar membresías por link —ver
+> [§2 septies](#2-septies-hecho-el-21-08--pasarela-de-pago-con-mercado-pago-)—. El operador
+> elige un plan del catálogo, el CRM genera el link y se lo manda por WhatsApp; recién
+> cuando Mercado Pago confirma el pago (webhook), el CRM renueva al socio y encola la
+> factura. El cobro en efectivo/transferencia (`POST /clients/:id/renew`) ahora habla el
+> mismo catálogo de planes y cancela cualquier link que haya quedado pendiente.
+>
+> **Ya no queda nada abierto del lado del código, ni backend ni front.** F1
+> (facturación), F2 (vencimiento de rutinas) y F3 (Mercado Pago) — las tres pantallas que
+> este documento pedía — están hechas y probadas en vivo. Las tres secciones siguen acá
+> como especificación completa **y guía de testing**, por si hace falta releerlas. El
+> backend sigue probado de punta a punta (813 tests, uno rojo preexistente y sin relación
+> — fecha hardcodeada en `GenerateRoutineUseCase.test.ts:266` —, `tsc` y build limpios).
 >
 > **Dos tareas que no son de código bloquean el deploy:** comprar el dominio
 > ([D1](#d1--comprar-el-dominio--antes-del-deploy)) y decidir el tier de hosting
 > ([D2](#d2--tier-de-pago-para-el-backend--al-primer-gimnasio-que-pague)). El D1 no es
-> opcional: sin dominio propio la sesión **no funciona en producción**, por la cookie.
+> opcional: sin dominio propio la sesión **no funciona en producción**, por la cookie —y
+> ahora tampoco el callback de OAuth de Mercado Pago, que necesita una URL pública estable.
 >
 > El contrato de la API dejó de vivir acá. Ahora está en
 > **[`docs/API_ENDPOINTS.md`](docs/API_ENDPOINTS.md)**, al día y verificado archivo por
-> archivo. Este documento vuelve a ser lo que dice el título: qué falta hacer — más, en F1,
-> el detalle de facturación que hace falta para poder testearla.
+> archivo. Este documento vuelve a ser lo que dice el título: qué falta hacer — más, en
+> F1/F2/F3, el detalle que hace falta para poder testear cada pantalla.
 
 ---
 
@@ -64,12 +78,40 @@ probarse contra el servicio real de AFIP:
 **El CUIT de prueba tiene que tener 11 dígitos** después de sacar guiones y puntos, o la
 factura queda en `error` sin llegar a AFIP.
 
-### 0.3 Las dos pantallas del front ⏳
+### 0.3 Las tres pantallas del front ✅ hecho el 21-08
 
-[F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) (facturación, que hoy
-no existe y sin ella no se puede facturar) y
-[F2](#f2--vencimiento-de-rutinas-textos-y-contadores) (los textos y contadores de
-vencimiento de rutinas, que ahora dicen otra cosa). El backend de las dos está listo.
+[F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio),
+[F2](#f2--vencimiento-de-rutinas-textos-y-contadores) y
+[F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación) están
+implementadas y verificadas en vivo contra este backend — detalle completo en
+[§2 octies](#2-octies-hecho-el-21-08-frontend--f1-f2-y-f3-implementadas-y-verificadas-en-vivo-).
+Ya no hay nada que "retomar" acá.
+
+### 0.4 Probar Mercado Pago contra una cuenta de test real ⏳
+
+Mismo pendiente que tuvo AFIP SDK en su momento ([§0.2](#02-probar-la-facturación-contra-el-homologación-de-arca-)):
+el circuito está probado de punta a punta contra un mock de `axios`
+(`tests/e2e/renovacionMercadoPago.test.ts`, 5 tests), pero el mock acepta cualquier cosa.
+Falta:
+
+1. **Registrar la app en Mercado Pago Developers** y cargar
+   `MERCADOPAGO_CLIENT_ID`/`MERCADOPAGO_CLIENT_SECRET`/`MERCADOPAGO_REDIRECT_URI` — hoy no
+   están seteadas en ningún `.env`, así que `GET /gyms/settings/mercadopago/connect`
+   responde `400` hasta que se carguen.
+2. **Configurar el secreto del webhook** (`MERCADOPAGO_WEBHOOK_SECRET`) en el panel de la
+   app — sin él, `POST /mercadopago/webhook` responde `503` a propósito (ver
+   [§2 septies](#2-septies-hecho-el-21-08--pasarela-de-pago-con-mercado-pago-)).
+3. **Correr el flujo completo con una cuenta de vendedor de test de Mercado Pago**: conectar
+   por OAuth de verdad, generar un link, pagarlo con una tarjeta de prueba, y confirmar que
+   el webhook real llega con la forma que el código espera. ⚠️ El manifest exacto del HMAC
+   de la firma (`id:…;request-id:…;ts:…;`) se armó a partir de las guías públicas de
+   Mercado Pago, **no se pudo confirmar contra un webhook real todavía** — es la misma
+   clase de incógnita que tuvo `CondicionIVAReceptorId` con AFIP, y se resuelve igual: mirando
+   qué llega de verdad antes de confiar en la doc a ciegas.
+
+`MERCADOPAGO_REDIRECT_URI` necesita una URL pública estable — depende del mismo D1
+(dominio) que la cookie de sesión. En local se puede probar con un túnel (ngrok) mientras
+tanto.
 
 ---
 
@@ -79,17 +121,21 @@ vencimiento de rutinas, que ahora dicen otra cosa). El backend de las dos está 
 |---|---|---|---|---|
 | [D1](#d1--comprar-el-dominio--antes-del-deploy) | **P0** | Comprar el dominio | **Nada de código** — es una compra | No |
 | [D2](#d2--tier-de-pago-para-el-backend--al-primer-gimnasio-que-pague) | P2 | Tier de pago para el backend | **Nada de código** — es config de hosting | No |
-| [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) | **P1** | Pantalla de facturación: CUIT, punto de venta, condición fiscal y credencial propia de AFIP SDK (apiKey + .crt + .key) | **Front** — backend listo | No — campos nuevos |
-| [F2](#f2--vencimiento-de-rutinas-textos-y-contadores) | P1 | Vencimiento de rutinas: textos y contadores | **Front** — backend listo | No — mismo campo, otro significado |
+| [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) | ✅ hecho | Pantalla de facturación: CUIT, punto de venta, condición fiscal y credencial propia de AFIP SDK (apiKey + .crt + .key) | **Front** — hecho y verificado en vivo el 21-08 | No — campos nuevos |
+| [F2](#f2--vencimiento-de-rutinas-textos-y-contadores) | ✅ hecho | Vencimiento de rutinas: textos y contadores | **Front** — verificado, no necesitó cambios | No — mismo campo, otro significado |
+| [F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación) | ✅ hecho | Pantalla de Mercado Pago: conectar cuenta, catálogo de planes y botón de renovación en la ficha del socio | **Front** — hecho y verificado en vivo el 21-08 | No — flujo nuevo |
 | [S1](#01-correr-los-dos-scripts-contra-la-base-) | **P1** | Correr `purge:afip-keys` y `backfill:vencimiento-rutinas` | **Nada de código** — es ejecutar dos scripts | No |
+| [S2](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-) | P2 | Registrar la app de Mercado Pago, cargar sus credenciales y probar el flujo con una cuenta de test | **Nada de código** — config de plataforma + prueba manual | No |
 | [P3-B](#p3-b--embudo-en-la-serie-mensual) | P3 | Embudo en la serie mensual | `GetGymKpisSeriesUseCase` + `IMetricsRepository` | No — aditivo |
 
-**No hay nada abierto del lado del código del backend.** D1 y D2 son decisiones de
+**No hay nada abierto del lado del código, ni backend ni front.** D1 y D2 son decisiones de
 infraestructura, no tareas de programación, pero D1 es **P0 porque bloquea el deploy**: sin
-dominio propio la sesión se rompe en producción por el `sameSite` de la cookie. F1 y F2 son
-trabajo de front sobre endpoints que ya existen y están probados —**sin F1 no se puede
-facturar**, porque no hay otro lugar donde el dueño del gimnasio cargue su CUIT—. S1 es
-apretar enter dos veces, pero contra la base de producción. P3-B está anotada, no pedida, y
+dominio propio la sesión se rompe en producción por el `sameSite` de la cookie —y ahora
+tampoco funciona el callback de Mercado Pago, que necesita una URL de redirect pública—. F1,
+F2 y F3 **ya están hechas** (21-08, ver [§2 octies](#2-octies-hecho-el-21-08-frontend--f1-f2-y-f3-implementadas-y-verificadas-en-vivo-)):
+sin F1 no se podía facturar y sin F3 no se podía cobrar por Mercado Pago, y las dos rutas
+ya funcionan de punta a punta contra este backend. S1 y S2 son configuración/ejecución, no
+código, y son lo único que sigue pendiente de verdad. P3-B está anotada, no pedida, y
 necesita una decisión de diseño del puerto antes de tocar nada.
 
 Lo que se cerró está en [§3 Hecho](#3-hecho-en-la-tanda-del-10-08), con la evidencia de
@@ -492,6 +538,132 @@ hasta que esta se venza.
 las rutinas ya generadas siguen mostrando la fecha vieja. Probar la pantalla contra datos
 sin migrar lleva a conclusiones equivocadas.
 
+### F3 — Pantalla de Mercado Pago: conectar, catálogo y botón de renovación
+
+**Es trabajo del front. El backend está listo, probado de punta a punta (unit + e2e,
+`tests/e2e/renovacionMercadoPago.test.ts`) y esta sección es también la guía de testing.**
+Contrato completo, con ejemplos, en
+[`docs/API_ENDPOINTS.md` §5, §5 bis y §6](docs/API_ENDPOINTS.md).
+
+Sin esta pantalla no se puede cobrar por Mercado Pago: la conexión de la cuenta, el
+catálogo de precios y el botón de renovación solo se pueden cargar/disparar desde acá.
+
+#### Lo que hace falta armar
+
+| Pieza | Dónde pega | Detalle |
+|---|---|---|
+| Botón "Conectar con Mercado Pago" | Configuración del gym | **GET autenticado** (fetch/axios) a `GET /gyms/settings/mercadopago/connect` → `{ url }`, y recién con esa URL en la mano, `window.open(url)` (ver ⚠️ abajo) |
+| Estado de conexión | Configuración del gym | `GET /gyms/settings` → `mercadoPagoConfig: { conectado, conectadoEn }` |
+| Botón "Desconectar" | Configuración del gym | `DELETE /gyms/settings/mercadopago` |
+| Catálogo de planes (CRUD de los 4 tipos) | Configuración del gym | `PUT /gyms/settings/membership-plans` — reemplaza la lista completa |
+| Botón **Renovación** en la ficha del socio | Ficha de cliente | Elegir plan → elegir método: **Efectivo** (`POST /clients/:id/renew` con `tipoPlan`, aplica al instante) o **Mercado Pago** (`POST /clients/:id/renewal-requests`, queda pendiente hasta el webhook) |
+| Badge "Renovación Pendiente (Plan)" | Listado/ficha de clientes | `GET /clients/:id/renewal-requests?estado=pendiente` — **no** es un campo de `Client` |
+
+⚠️ **`GET /gyms/settings/mercadopago/connect` devuelve JSON, no redirige.** Corregido
+el 21-08 tras detectarlo desde el front: la ruta está detrás de `authMiddleware` como el
+resto de `/gyms/settings/*`, y una navegación real de browser (`<a href>`,
+`window.location`, `window.open`) **no puede llevar el header `Authorization: Bearer`** —
+eso solo lo hace un `fetch`/axios. El flujo correcto:
+
+1. GET autenticado normal → `{ "data": { "url": "https://auth.mercadopago.com/..." } }`.
+2. El front navega él mismo con esa URL (`window.open(url)` es lo recomendado, para no
+   perder la pestaña del CRM — el dueño vuelve a una pestaña nueva que cae en el callback).
+3. Cuando el dueño vuelve, cae en `GET /mercadopago/callback` (público, lo maneja el
+   backend solo) — el front no participa de ese paso, solo tiene que enterarse de que ya
+   terminó (pollear `GET /gyms/settings`, o pedirle al dueño que refresque la pestaña
+   original).
+
+#### 1. Conectar la cuenta
+
+```bash
+curl http://localhost:4000/api/gyms/settings/mercadopago/connect \
+  -H "Authorization: Bearer $GYM_TOKEN"
+```
+
+```jsonc
+// Response 200
+{ "status": "success", "data": { "url": "https://auth.mercadopago.com/authorization?..." } }
+```
+
+Si la plataforma no tiene `MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` cargadas
+(ver [§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)), responde `400` en
+vez de la `url`.
+
+#### 2. Configurar el catálogo — `PUT /api/gyms/settings/membership-plans`
+
+```bash
+curl -X PUT http://localhost:4000/api/gyms/settings/membership-plans \
+  -H "Authorization: Bearer $GYM_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "planes": [
+      { "tipo": "mensual", "duracionDias": 30, "monto": 15000, "activo": true },
+      { "tipo": "semestral", "duracionDias": 180, "monto": 70000, "activo": true }
+    ]
+  }'
+```
+
+No hace falta cargar los cuatro tipos — los que falten simplemente no aparecen como
+opción al elegir plan. `400` si hay dos planes con el mismo `tipo`, o algún
+`monto`/`duracionDias` no positivo.
+
+#### 3. Cobrar en efectivo, en el momento — `POST /api/clients/:id/renew`
+
+```bash
+curl -X POST http://localhost:4000/api/clients/$CLIENT_ID/renew \
+  -H "Authorization: Bearer $GYM_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "tipoPlan": "mensual" }'
+```
+
+Renueva al instante (sin esperar nada) y **cancela cualquier link de Mercado Pago
+pendiente** que tuviera este socio — la UI tiene que reflejar eso: si había un badge de
+"link pendiente", desaparece.
+
+#### 4. Cobrar por Mercado Pago — `POST /api/clients/:id/renewal-requests`
+
+```bash
+curl -X POST http://localhost:4000/api/clients/$CLIENT_ID/renewal-requests \
+  -H "Authorization: Bearer $GYM_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "tipoPlan": "mensual" }'
+```
+
+```jsonc
+// Response 201
+{ "status": "success", "data": {
+  "id": "...", "estado": "pendiente", "initPoint": "https://www.mercadopago.com.ar/...",
+  "plan": { "tipo": "mensual", "duracionDias": 30, "monto": 15000 }
+} }
+```
+
+⚠️ **No renueva en el momento.** El link se manda solo por WhatsApp si el socio tiene
+`telefono` cargado; si no, o si falla el envío, el link igual queda válido — mostrarlo en
+pantalla para que se pueda copiar a mano es un buen respaldo.
+
+#### 5. Confirmar el pago para el test — el webhook, sin cuenta real todavía
+
+Sin una cuenta de Mercado Pago conectada de verdad ([§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)),
+no hay forma de que el pago se confirme solo. El e2e (`tests/e2e/renovacionMercadoPago.test.ts`)
+simula el webhook firmándolo a mano con `MERCADOPAGO_WEBHOOK_SECRET` — es el mismo camino
+que seguiría un test manual una vez que haya credenciales reales cargadas.
+
+#### 6. Leer el historial — `GET /api/clients/:id/renewal-requests`
+
+| Estado | Qué mostrar |
+|---|---|
+| `pendiente` | "Esperando pago" — el link sigue siendo válido, se puede reenviar o cancelar con un cobro en efectivo |
+| `aprobado` | El socio ya está renovado (revisar `GET /clients/:id` para la fecha real) |
+| `rechazado` | El pago no se completó — se puede pedir un link nuevo |
+| `cancelado` | Lo reemplazó un pedido más nuevo, o se confirmó un cobro en efectivo mientras estaba pendiente |
+
+#### Checklist mínimo para que un cobro por Mercado Pago salga
+
+1. `GET /gyms/settings/mercadopago/connect` (conectar, una sola vez)
+2. `PUT /gyms/settings/membership-plans` con al menos un plan activo
+3. El socio con `telefono` cargado (si no, el link no se manda solo)
+4. `POST /clients/:id/renewal-requests` con el `tipoPlan`
+5. Esperar el webhook (o confirmarlo a mano contra homologación una vez que haya cuenta
+   de test, [§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-))
+6. `GET /clients/:id` para ver la renovación aplicada
+
 ### P3-B — Embudo en la serie mensual
 
 **No está pedido y no está abierto.** Queda anotado con el porqué, para no volver a
@@ -506,6 +678,218 @@ particione en memoria.
 Si alguna vez se pide, **la forma correcta es la segunda** —una lectura, partición en
 memoria— para no romper la regla de la lectura única. La primera es más fácil de escribir
 y le saca al endpoint la única razón por la que existe.
+
+---
+
+## 2 octies. Hecho el 21-08 (frontend) — F1, F2 y F3 implementadas y verificadas en vivo ✅
+
+Cierra el tablero: las tres pantallas que este documento pedía —facturación, vencimiento
+de rutinas, Mercado Pago— están escritas, tipeadas, con tests unitarios y **probadas en
+vivo contra este backend corriendo en local**, no solo contra mocks. Sesión de front
+separada de la que hizo el backend (§2 septies, mismo día), coordinada por el mismo
+usuario para cerrar el mismatch del contrato de "Conectar con Mercado Pago" (punto 3 de
+esta sección).
+
+### 1. F1 — Facturación AFIP ✅
+
+La identidad fiscal (CUIT, punto de venta, condición, `isActive`) ya existía de una tanda
+anterior del front. Lo que faltaba y se agregó ahora:
+
+- **Credencial propia de AFIP SDK** (`apiKey` + `.crt` + `.key`, multipart), con el mismo
+  patrón "write-only" que ya usaba la credencial de IA: el campo arranca vacío siempre, y
+  solo viaja si se cargó algo nuevo.
+- El checklist de "qué falta para emitir" sumó un quinto requisito (la credencial) —
+  hasta ahora decía "puede emitir" con la identidad fiscal completa pero sin credencial
+  cargada, que es justo el caso que dejó el revert del 20-08 (§2 sexies).
+- `condicionFiscal`/`cuit` del socio en el alta y la edición, con el campo de CUIT
+  apareciendo solo si se elige Responsable Inscripto — habilita probar Factura A desde la
+  UI y no solo por curl.
+
+**Probado en vivo:** se guardó una credencial de prueba contra este backend, el checklist
+reaccionó marcando "Credencial de AFIP SDK" como faltante hasta completar los tres
+campos, y se armó un socio Responsable Inscripto de punta a punta (con su badge en la
+ficha).
+
+### 2. F2 — Vencimiento de rutinas ✅
+
+Se auditó y **no hizo falta ningún cambio**: el dashboard ya mostraba los tres
+contadores (`en7Dias`/`en5Dias`/`en3Dias`) sin sumarlos entre sí, y los textos ya
+distinguían el vencimiento de la rutina del de la membresía. Queda documentado acá para
+no volver a auditarlo de cero en una próxima sesión.
+
+### 3. F3 — Mercado Pago ✅
+
+Todo nuevo: catálogo de planes, conectar/desconectar cuenta, y el diálogo de renovación
+con los dos métodos de cobro.
+
+- **Catálogo de planes**: los cuatro tipos fijos (mensual/trimestral/semestral/anual),
+  cada uno con duración/monto/activo. Se manda al backend solo el tipo que tenga los dos
+  campos completos y positivos — no hace falta una fila dinámica para "no cargar los
+  cuatro tipos", alcanza con filtrar al enviar.
+- **Conectar/desconectar Mercado Pago**: acá apareció el problema real de contrato. El
+  access token de este front vive **solo en memoria** (nunca en cookie), así que una
+  navegación de browser real (`<a href>`, `window.open`, `window.location`) no puede
+  llevar el header `Authorization: Bearer` que pedía (y sigue pidiendo) `authMiddleware`.
+  Seguir el `302` tal como estaba documentado daba `401` en la práctica. Se corrigió el
+  mismo día cambiando el endpoint a devolver `{ data: { url } }` (ver
+  [§2 septies](#2-septies-hecho-el-21-08--pasarela-de-pago-con-mercado-pago-) y
+  `docs/API_ENDPOINTS.md` §5) — el front pide la URL con un GET autenticado normal y
+  recién con la respuesta en la mano hace `window.open`.
+- **Diálogo de renovación, rediseñado**: elegir qué cobrar (plan del catálogo o monto
+  manual) y elegir método (efectivo al instante, o Mercado Pago — solo si hay un plan de
+  catálogo elegido **y** la cuenta está conectada). El resultado se muestra distinto según
+  el método: una fecha nueva para efectivo, un link "esperando pago" para Mercado Pago.
+- **Historial de links + badge "Renovación Pendiente"** en la ficha del socio, leyendo
+  `GET /clients/:id/renewal-requests`. **Decisión tomada con el usuario:** el badge no se
+  agregó al listado paginado de socios — no hay un endpoint que traiga de una sola vez
+  qué socios tienen un link pendiente para todo el gimnasio, y agregarlo ahí exigiría una
+  consulta por fila (patrón que no existe en ningún otro listado del sistema). Si hace
+  falta más adelante, es un pedido de endpoint agregado al backend (un
+  `GET /renewal-requests?estado=pendiente` a nivel gimnasio, análogo a como `/routines` y
+  `/invoices` resuelven el listado del gimnasio entero), no algo que el front deba resolver
+  con N+1.
+
+**Probado en vivo, con datos reales de este backend:**
+
+- El catálogo se guardó y persistió tras recargar la página (`mensual` activo a $18.000).
+- El botón "Conectar" hizo el GET autenticado real y recibió el `400` esperado —las
+  credenciales de plataforma
+  (`MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`,
+  [§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)) todavía no están
+  cargadas en ningún `.env`, así que esto es lo correcto y no un bug nuevo.
+- Se renovó a un socio real por catálogo (`{ "tipoPlan": "mensual" }`): el vencimiento
+  pasó de `26/08/2026` a `25/09/2026`, confirmando en vivo que el camino por catálogo
+  extiende desde el vencimiento **actual** del socio — a diferencia del monto manual, que
+  extiende siempre desde hoy (`docs/API_ENDPOINTS.md` §6).
+- **Lo único que no se pudo probar en vivo** es el circuito completo de un link pagado de
+  verdad (`POST /clients/:id/renewal-requests` → pago → webhook → `aprobado`), porque la
+  cuenta de Mercado Pago todavía no está conectada. Es exactamente el pendiente de
+  [§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)/S2, no un hueco nuevo que
+  haya dejado el front.
+
+⚠️ **Efecto real en los datos de esta base, no un bug:** las pruebas en vivo activaron el
+plan `mensual` ($18.000) en el catálogo del gimnasio de prueba y renovaron de verdad a un
+socio real (vencimiento y evento de renovación quedaron aplicados, con su factura
+correspondiente encolada si la facturación estaba activa). No hay endpoint para deshacer
+una renovación — si molesta para los números de este gimnasio de prueba, se corrige a
+mano contra Mongo.
+
+### 4. Qué queda — es exactamente lo que ya estaba anotado, nada nuevo
+
+[S1](#01-correr-los-dos-scripts-contra-la-base-) (correr los dos scripts),
+[0.2](#02-probar-la-facturación-contra-el-homologación-de-arca-) (AFIP contra
+homologación real) y [0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-)/S2
+(Mercado Pago contra una cuenta de test real) — las tres son configuración y pruebas
+manuales, no código. El front terminó su parte y queda a la espera de esas tres.
+
+---
+
+## 2 septies. Hecho el 21-08 — pasarela de pago con Mercado Pago ✅
+
+813 tests (eran 803 al arrancar la tanda; 812 en verde — el único rojo sigue siendo el
+mismo de rutinas con fecha hardcodeada, no relacionado), `tsc --noEmit` y `npm run build`
+limpios.
+
+Cierra el paso que quedaba antes de la facturación: cobrar de verdad. Hasta ahora
+`POST /clients/:id/renew` confiaba en que el operador ya había cobrado en efectivo; ahora
+hay un segundo camino —el link de Mercado Pago— que solo se confirma cuando Mercado Pago
+avisa por webhook, y los dos caminos convergen en el mismo lugar para no duplicar la
+lógica de churn/MRR/facturación.
+
+### 1. Cómo queda el flujo completo ✅
+
+```
+[Operador elige plan] → [CRM crea el link] → [Socio paga]
+                                                    ↓
+[Factura AFIP encolada] ← [CRM aplica la renovación] ← [Mercado Pago confirma por webhook]
+```
+
+En paralelo, el cobro en efectivo/transferencia (`POST /clients/:id/renew`) ahora también
+puede elegir `tipoPlan` en vez de tipear el monto a mano, y **cancela cualquier link de
+Mercado Pago pendiente** al confirmarse — para que un socio no pueda terminar pagando la
+misma cuota dos veces.
+
+### 2. Cuenta PROPIA por gimnasio, mismo criterio que AFIP ✅
+
+Cada gym conecta **su propia cuenta** de Mercado Pago por OAuth (no hay cuenta compartida
+de plataforma): access token + refresh token, cifrados en `Gym.mercadoPagoConfig` con el
+mismo AES-256-GCM que `afipConfig`/`whatsappConfig`. La plataforma solo aporta la
+**aplicación** registrada en Mercado Pago Developers (`MERCADOPAGO_CLIENT_ID`/
+`CLIENT_SECRET`/`REDIRECT_URI`) — el mismo rol que cumple `app.afipsdk.com` para AFIP SDK.
+
+A diferencia del access token de AFIP SDK (no vence), el de Mercado Pago vence a los 180
+días. `ResolverMercadoPagoAccessTokenUseCase` lo refresca solo, de forma perezosa, antes de
+cada llamada que lo necesite — no hay un cron adicional.
+
+### 3. El catálogo de precios, decisión explícita del usuario ✅
+
+El monto de cada renovación (mensual/trimestral/semestral/anual) sale de
+`Gym.membershipPlans`, un catálogo que carga el propio dueño — **no** se tipea a mano en
+cada renovación, ni por el operador ni por el link de Mercado Pago. Fue una decisión
+tomada expresamente frente a la alternativa de "monto libre + plan que solo define la
+duración": el catálogo evita que dos operadores cobren distinto por el mismo plan, y hace
+que el link y la factura salgan siempre con el monto exacto.
+
+### 4. La renovación real vive en un único lugar, compartido por los dos caminos ✅
+
+`RenewClientUseCase` (cobro manual) se partió en un wrapper delgado que resuelve
+monto/vencimiento (por catálogo o a mano) y un núcleo nuevo, `AplicarRenovacionUseCase`
+(`src/application/use-cases/client/AplicarRenovacionUseCase.ts`), que es literalmente el
+cuerpo que antes tenía `RenewClientUseCase` entero: actualizar el cliente, dejar el evento
+de membership y encolar la factura. `ProcessMercadoPagoWebhookUseCase` (la confirmación
+por Mercado Pago) llama al mismo núcleo. Que los dos caminos conviertan sobre el mismo
+código es lo que garantiza que el churn, el MRR y la facturación no puedan divergir según
+por dónde entró el cobro.
+
+### 5. El webhook nunca confía en su propio body ✅
+
+La notificación de Mercado Pago (`{ type: "payment", data: { id }, user_id }`) solo trae un
+`id` de pago y el `user_id` del vendedor conectado — **nunca** el resultado del pago en
+claro. `ProcessMercadoPagoWebhookUseCase` usa el `user_id` para encontrar el gym
+(`Gym.mercadoPagoConfig.mpUserId`, guardado al conectar) y con la cuenta de ESE gym vuelve
+a pedirle el pago real a la API de Mercado Pago antes de tocar nada. Además:
+
+- **Firma verificada** (`x-signature`/`x-request-id`, HMAC-SHA256 contra
+  `MERCADOPAGO_WEBHOOK_SECRET`) con comparación en tiempo constante — mismo criterio que
+  `internalAuthMiddleware`. Sin el secreto configurado, el endpoint responde `503`: cerrado
+  por default, no abierto.
+- **Idempotente**: un pedido que ya no está `pendiente` no se vuelve a aplicar, así que un
+  reenvío de Mercado Pago (que hace seguido) no duplica la renovación.
+- **Nunca toca al `Client`** hasta que el pago está `approved` de verdad.
+
+⚠️ El manifest exacto del HMAC (`id:{data.id};request-id:{x-request-id};ts:{ts};`) sale de
+las guías públicas de Mercado Pago, no de un webhook real verificado — ver
+[§0.4](#04-probar-mercado-pago-contra-una-cuenta-de-test-real-).
+
+### 6. `Client` no se tocó — el "pendiente" se deriva, no se guarda ✅
+
+Se evaluaron dos formas de mostrar "Renovación Pendiente (Plan)" en el listado: agregar un
+campo a `Client`, o derivarlo consultando `RenewalRequest`. Se eligió la segunda **a
+propósito**: los KPIs de churn/MRR ya dependen de `ClientStatus`
+(`activo|inactivo|pendiente`), y tocar ese enum o agregarle un campo relacionado arriesgaba
+esos cálculos por una necesidad puramente de UI. `GET /clients/:id/renewal-requests` es de
+donde sale el badge.
+
+### 7. Probado con las mismas tres capas que la facturación AFIP ✅
+
+- `tests/unit/payments/` — `ProcessMercadoPagoWebhookUseCase` (aprobado, rechazado,
+  pendiente, idempotencia, gym no encontrado, pedido de otro gym), `mercadoPagoSignature`
+  (firma válida/inválida/adulterada), `CreateRenewalPaymentLinkUseCase`.
+- `tests/unit/client/RenewClientUseCase.test.ts` — ampliado con los casos de `tipoPlan` y
+  la cancelación del link pendiente.
+- `tests/unit/gym/UpdateMembershipPlansUseCase.test.ts`, `tests/unit/billing/planesMembresia.test.ts`.
+- `tests/e2e/renovacionMercadoPago.test.ts` — el circuito HTTP completo con `axios`
+  mockeado (no los puertos, mismo criterio que `facturacionArca.test.ts`): conectar por
+  OAuth real → catálogo → pedir link → webhook firmado de verdad → cliente renovado +
+  factura encolada, más firma inválida, reenvío idempotente y cobro en efectivo cancelando
+  un link pendiente.
+
+### 8. Documentación actualizada ✅
+
+`docs/API_ENDPOINTS.md` (§5 Mercado Pago en gimnasio propio, §5 bis callback/webhook
+público, §6 `renew`/`renewal-requests`) y este documento, sección
+[F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación), que es también
+la guía de testing.
 
 ---
 
@@ -1105,6 +1489,16 @@ actualizaron y se agregó el caso de 8 días, que sí devuelve valor.
   prueba es una decisión fiscal y se escribe explícita en el entorno.
 - **La renovación no factura sincrónicamente.** Deja la factura en `pendiente` y responde;
   emite el worker. El front no debe esperar un CAE en esa respuesta.
+- **`GET /gyms/settings/mercadopago/connect` devuelve JSON (`{ data: { url } }`), no un
+  `302`.** Corregido el 21-08 al implementar el front: una navegación real de browser no
+  puede llevar el `Authorization: Bearer` que exige `authMiddleware`, porque el access
+  token vive solo en memoria. El front pide la URL con un GET autenticado y recién ahí
+  navega él mismo.
+- **El badge "Renovación Pendiente" no vive en `Client` ni en el listado paginado de
+  socios.** Se deriva de `GET /clients/:id/renewal-requests`, solo en la ficha individual
+  — mostrarlo en el listado exigiría un endpoint agregado por gimnasio que hoy no existe.
+  Si se pide, ver [§2 octies](#2-octies-hecho-el-21-08-frontend--f1-f2-y-f3-implementadas-y-verificadas-en-vivo-)
+  punto 3 para la forma correcta.
 
 ---
 

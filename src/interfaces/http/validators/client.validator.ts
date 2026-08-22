@@ -57,6 +57,23 @@ export const searchClientsSchema = z.object({
   limit: z.string().transform(Number).default('20'),
 });
 
-export const renewClientSchema = z.object({
-  monto: z.number().positive('Monto debe ser positivo'),
+// `tipoPlan` es el camino recomendado (resuelve monto y vencimiento desde el
+// catálogo del gym); `monto` sigue existiendo para un cobro que no calza con
+// ningún plan (una promo, un ajuste). Al menos uno de los dos tiene que venir.
+export const renewClientSchema = z
+  .object({
+    monto: z.number().positive('Monto debe ser positivo').optional(),
+    tipoPlan: z.enum(['mensual', 'trimestral', 'semestral', 'anual']).optional(),
+  })
+  .refine((data) => data.monto !== undefined || data.tipoPlan !== undefined, {
+    message: 'Hay que indicar monto o tipoPlan',
+  });
+
+// POST /clients/:id/renewal-requests — dispara el link de pago de Mercado Pago.
+// A diferencia de /renew, acá SIEMPRE es por catálogo: no tiene sentido un link
+// de pago por un monto que el gym no definió como plan.
+export const createRenewalRequestSchema = z.object({
+  tipoPlan: z.enum(['mensual', 'trimestral', 'semestral', 'anual'], {
+    errorMap: () => ({ message: 'tipoPlan debe ser mensual, trimestral, semestral o anual' }),
+  }),
 });

@@ -3,6 +3,12 @@ import { MongoClientRepository } from '../../../infrastructure/database/mongoose
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoInvoiceRepository } from '../../../infrastructure/database/mongoose/repositories/MongoInvoiceRepository';
 import { MongoMembershipEventRepository } from '../../../infrastructure/database/mongoose/repositories/MongoMembershipEventRepository';
+import { MongoRenewalRequestRepository } from '../../../infrastructure/database/mongoose/repositories/MongoRenewalRequestRepository';
+import { MongoGymSecretsRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository';
+import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
+import { MercadoPagoAdapterFactory } from '../../../infrastructure/external/payments/MercadoPagoAdapterFactory';
+import { MercadoPagoOAuthAdapter } from '../../../infrastructure/external/payments/MercadoPagoOAuthAdapter';
+import { MetaCloudApiProviderFactory } from '../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory';
 import { CreateClientUseCase } from '../../../application/use-cases/client/CreateClientUseCase';
 import { SearchClientsUseCase } from '../../../application/use-cases/client/SearchClientsUseCase';
 import { UpdateClientUseCase } from '../../../application/use-cases/client/UpdateClientUseCase';
@@ -11,11 +17,16 @@ import { RenewClientUseCase } from '../../../application/use-cases/client/RenewC
 import { UpdateClientSurveyUseCase } from '../../../application/use-cases/client/UpdateClientSurveyUseCase';
 import { RegisterFirstContactUseCase } from '../../../application/use-cases/client/RegisterFirstContactUseCase';
 import { RegisterFormSentUseCase } from '../../../application/use-cases/client/RegisterFormSentUseCase';
+import { CreateRenewalPaymentLinkUseCase } from '../../../application/use-cases/payments/CreateRenewalPaymentLinkUseCase';
+import { ResolverMercadoPagoAccessTokenUseCase } from '../../../application/use-cases/payments/ResolverMercadoPagoAccessTokenUseCase';
 import { ClientController } from '../controllers/ClientController';
 import { createClientSchema, updateClientSchema, updateClientSurveySchema } from '../validators/client.validator';
-import { registerFirstContactSchema, renewClientSchema } from '../validators/client.validator';
+import { registerFirstContactSchema, renewClientSchema, createRenewalRequestSchema } from '../validators/client.validator';
+import { env } from '../../../config/env';
+import { ValidationError } from '../../../shared/errors/AppError';
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { getTenantId } from '../middlewares/tenantMiddleware';
 
 // Middleware para validar query params
 function validateQuery(schema: z.ZodSchema<any>) {
@@ -48,6 +59,9 @@ export const createClientRoutes = () => {
   const gymRepository = new MongoGymRepository();
   const invoiceRepository = new MongoInvoiceRepository();
   const membershipEventRepository = new MongoMembershipEventRepository();
+  const renewalRequestRepository = new MongoRenewalRequestRepository();
+  const encryptionService = new EncryptionService();
+  const gymSecretsRepo = new MongoGymSecretsRepository(encryptionService);
 
   const createClientUseCase = new CreateClientUseCase(clientRepository, membershipEventRepository);
   const searchClientsUseCase = new SearchClientsUseCase(clientRepository);
@@ -55,16 +69,39 @@ export const createClientRoutes = () => {
   const deleteClientUseCase = new DeleteClientUseCase(clientRepository);
   // Renovar ya no necesita las credenciales de AFIP ni el proveedor de facturación:
   // solo deja el comprobante encolado. Quien los usa es el worker de emisión.
+  // Sí necesita el repositorio de pedidos de Mercado Pago: un cobro confirmado a
+  // mano cancela cualquier link que haya quedado pendiente para el mismo socio.
   const renewClientUseCase = new RenewClientUseCase(
     clientRepository,
     gymRepository,
     invoiceRepository,
-    membershipEventRepository
+    membershipEventRepository,
+    renewalRequestRepository
   );
 
   const updateClientSurveyUseCase = new UpdateClientSurveyUseCase(clientRepository);
   const registerFirstContactUseCase = new RegisterFirstContactUseCase(clientRepository);
   const registerFormSentUseCase = new RegisterFormSentUseCase(clientRepository);
+
+  // Mercado Pago no está disponible en todos los deploys (requiere
+  // MERCADOPAGO_CLIENT_ID/SECRET/REDIRECT_URI, ver src/config/env.ts): se arma
+  // recién al construir el adaptador OAuth, dentro del handler, para no hacer
+  // fallar el arranque del server en un ambiente que todavía no la configuró.
+  const construirMercadoPagoOAuthAdapter = (): MercadoPagoOAuthAdapter => {
+    if (!env.MERCADOPAGO_CLIENT_ID || !env.MERCADOPAGO_CLIENT_SECRET || !env.MERCADOPAGO_REDIRECT_URI) {
+      throw new ValidationError(
+        'Mercado Pago no está configurado en la plataforma (faltan MERCADOPAGO_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI).'
+      );
+    }
+    return new MercadoPagoOAuthAdapter(
+      env.MERCADOPAGO_CLIENT_ID,
+      env.MERCADOPAGO_CLIENT_SECRET,
+      env.MERCADOPAGO_REDIRECT_URI
+    );
+  };
+
+  const paymentProviderFactory = new MercadoPagoAdapterFactory();
+  const whatsappProviderFactory = new MetaCloudApiProviderFactory();
 
   const clientController = new ClientController(
     createClientUseCase,
@@ -136,10 +173,77 @@ export const createClientRoutes = () => {
     clientController.delete(req as AuthenticatedRequest, res, next)
   );
 
-  // POST /api/clients/:id/renew - Renovar cliente
+  // POST /api/clients/:id/renew - Renovar cliente (efectivo/transferencia, en el momento)
   router.post('/:id/renew', validateBody(renewClientSchema), (req, res, next) =>
     clientController.renew(req as AuthenticatedRequest, res, next)
   );
+
+  // POST /api/clients/:id/renewal-requests - Generar y mandar el link de pago de
+  // Mercado Pago. NO renueva en el momento: la renovación real la aplica el
+  // webhook cuando Mercado Pago confirma el pago (ver payments/ProcessMercadoPagoWebhookUseCase).
+  router.post(
+    '/:id/renewal-requests',
+    validateBody(createRenewalRequestSchema),
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const gymId = getTenantId(req);
+        const oauthService = construirMercadoPagoOAuthAdapter();
+        const resolverAccessToken = new ResolverMercadoPagoAccessTokenUseCase(
+          gymRepository,
+          gymSecretsRepo,
+          oauthService,
+          encryptionService
+        );
+        const createRenewalPaymentLinkUseCase = new CreateRenewalPaymentLinkUseCase(
+          clientRepository,
+          gymRepository,
+          gymSecretsRepo,
+          renewalRequestRepository,
+          paymentProviderFactory,
+          whatsappProviderFactory,
+          resolverAccessToken
+        );
+
+        const result = await createRenewalPaymentLinkUseCase.execute({
+          clientId: req.params.id,
+          gymId,
+          tipoPlan: req.body.tipoPlan
+        });
+
+        res.status(201).json({ status: 'success', data: result });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  // GET /api/clients/:id/renewal-requests - Historial de pedidos de pago, para el
+  // badge de "renovación pendiente" y el reenvío.
+  router.get('/:id/renewal-requests', async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const gymId = getTenantId(req);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const estado = req.query.estado as
+        | 'pendiente'
+        | 'aprobado'
+        | 'rechazado'
+        | 'expirado'
+        | 'cancelado'
+        | undefined;
+
+      const result = await renewalRequestRepository.search(
+        gymId,
+        { clientId: req.params.id, estado },
+        page,
+        limit
+      );
+
+      res.json({ status: 'success', data: result });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   return router;
 };
