@@ -194,4 +194,9 @@ export class MongoRoutineRepository implements IRoutineRepository {
   async countBySendStatus(gymId: string, estadoEnvio: RoutineSendStatus): Promise<number> {
     return RoutineModel.countDocuments({ gymId, estadoEnvio });
   }
+
+  async delete(id: string, gymId: string): Promise<boolean> {
+    const result = await RoutineModel.deleteOne({ _id: id, gymId });
+    return result.deletedCount > 0;
+  }
 }

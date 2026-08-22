@@ -4,6 +4,7 @@ import { RoutineController } from '../controllers/RoutineController';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
+import { DeleteRoutineUseCase } from '../../../application/use-cases/routine/DeleteRoutineUseCase';
 import { searchRoutinesSchema } from '../validators/routine.validator';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
@@ -69,6 +70,7 @@ const createRoutineRouter = () => {
   );
 
   const searchRoutinesUseCase = new SearchRoutinesUseCase(routineRepository);
+  const deleteRoutineUseCase = new DeleteRoutineUseCase(routineRepository);
 
   const routineController = new RoutineController(
     generateRoutineUseCase,
@@ -76,7 +78,8 @@ const createRoutineRouter = () => {
     routineRepository,
     clientRepository,
     fileStorage,
-    searchRoutinesUseCase
+    searchRoutinesUseCase,
+    deleteRoutineUseCase
   );
 
   router.post('/generate/:clientId', (req, res, next) =>
@@ -110,6 +113,10 @@ const createRoutineRouter = () => {
 
   router.post('/:id/resend', (req, res, next) =>
     routineController.resend(req, res, next)
+  );
+
+  router.delete('/:id', (req, res, next) =>
+    routineController.delete(req, res, next)
   );
 
   return router;

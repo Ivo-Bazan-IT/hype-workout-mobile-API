@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
+import { DeleteRoutineUseCase } from '../../../application/use-cases/routine/DeleteRoutineUseCase';
 import { IRoutineRepository } from '../../../domain/repositories/IRoutineRepository';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
 import {
@@ -20,7 +21,8 @@ export class RoutineController {
     private routineRepository: IRoutineRepository,
     private clientRepository: IClientRepository,
     private fileStorage: IFileStorage,
-    private searchRoutinesUseCase: SearchRoutinesUseCase
+    private searchRoutinesUseCase: SearchRoutinesUseCase,
+    private deleteRoutineUseCase: DeleteRoutineUseCase
   ) {}
 
   async list(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -203,6 +205,22 @@ export class RoutineController {
         status: 'success',
         message: 'Routine resent',
         data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async delete(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+
+      await this.deleteRoutineUseCase.execute({ routineId: id, gymId });
+
+      res.json({
+        status: 'success',
+        message: 'Routine deleted successfully'
       });
     } catch (error) {
       next(error);

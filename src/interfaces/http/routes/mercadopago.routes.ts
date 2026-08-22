@@ -116,7 +116,7 @@ export const createMercadoPagoPublicRouter = (): Router => {
   });
 
   /**
-   * `POST /api/payments/mercadopago/webhook` — lo llama Mercado Pago, nunca el
+   * `POST /api/mercadopago/webhook` — lo llama Mercado Pago, nunca el
    * front. Contrato del body verificado contra la documentación pública de
    * Mercado Pago: `{ type: "payment", data: { id }, user_id }`.
    */

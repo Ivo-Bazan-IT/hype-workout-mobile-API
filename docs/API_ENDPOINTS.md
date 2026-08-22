@@ -954,6 +954,11 @@ volver a pedir la rutina solo para saber si salió.
 
 Reintenta el envío por WhatsApp.
 
+### `DELETE /routines/:id`
+
+Borrado duro — a diferencia del socio, la rutina no tiene estado `inactivo`. `{ status, message }`.
+El PDF en storage no se borra: no hay puerto para eso.
+
 ---
 
 ## 9. Dashboard (`/dashboard`)

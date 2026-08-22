@@ -67,6 +67,14 @@ export interface IRoutineRepository {
    * acá un 0 es un dato real y no un `null` — significa que no hay ninguna trabada.
    */
   countBySendStatus(gymId: string, estadoEnvio: RoutineSendStatus): Promise<number>;
+
+  /**
+   * Borrado duro: a diferencia del socio, la rutina no tiene un estado
+   * "inactivo" que la saque de circulación sin perder el registro. El PDF que
+   * haya en storage queda huérfano — no hay puerto para borrarlo, y no vale la
+   * pena sumarlo solo para este caso.
+   */
+  delete(id: string, gymId: string): Promise<boolean>;
 }
 
 export interface IRoutineQueueData {

@@ -223,3 +223,37 @@ describe('MongoRoutineRepository.countExpiringWithin (integración)', () => {
     expect(await repository.countExpiringWithin(gymId, 7)).toBe(0);
   });
 });
+
+describe('MongoRoutineRepository.delete (integración)', () => {
+  const gymId = new Types.ObjectId().toString();
+  const otroGymId = new Types.ObjectId().toString();
+  const clientId = new Types.ObjectId().toString();
+
+  it('borra el documento y devuelve true', async () => {
+    const repository = new MongoRoutineRepository();
+    const rutina = await RoutineModel.create({
+      gymId: new Types.ObjectId(gymId),
+      clientId: new Types.ObjectId(clientId),
+      fechaVencimiento: new Date('2026-09-01'),
+    });
+
+    const borrada = await repository.delete(rutina.id, gymId);
+
+    expect(borrada).toBe(true);
+    expect(await RoutineModel.findById(rutina.id)).toBeNull();
+  });
+
+  it('no borra la rutina de otro gimnasio, y devuelve false', async () => {
+    const repository = new MongoRoutineRepository();
+    const rutina = await RoutineModel.create({
+      gymId: new Types.ObjectId(gymId),
+      clientId: new Types.ObjectId(clientId),
+      fechaVencimiento: new Date('2026-09-01'),
+    });
+
+    const borrada = await repository.delete(rutina.id, otroGymId);
+
+    expect(borrada).toBe(false);
+    expect(await RoutineModel.findById(rutina.id)).not.toBeNull();
+  });
+});
