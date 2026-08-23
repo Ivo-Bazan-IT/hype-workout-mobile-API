@@ -48,10 +48,10 @@ código pero **sin ejecutar**, porque tocan la base o dependen de un tercero.
 Ninguno se corrió todavía. Los dos leen `MONGO_URI` del `.env`, **que hoy apunta al Atlas de
 producción**: mirar contra qué base se está apretando enter antes de hacerlo.
 
-| Script | Qué arregla | Si no se corre |
-|---|---|---|
-| `npm run purge:afip-keys` | Borra de Mongo las credenciales de AFIP por gimnasio, que ya salieron del schema | Quedan credenciales cifradas de terceros guardadas sin que nada las lea |
-| `npm run backfill:vencimiento-rutinas` | Recalcula el vencimiento de las rutinas ya generadas | **Las rutinas viejas siguen mostrando el vencimiento de la cuota.** Recargar el server NO lo corrige: el código decide qué se guarda al generar una rutina nueva, no reescribe lo ya guardado |
+| Script                                 | Qué arregla                                                                      | Si no se corre                                                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run purge:afip-keys`              | Borra de Mongo las credenciales de AFIP por gimnasio, que ya salieron del schema | Quedan credenciales cifradas de terceros guardadas sin que nada las lea                                                                                                                       |
+| `npm run backfill:vencimiento-rutinas` | Recalcula el vencimiento de las rutinas ya generadas                             | **Las rutinas viejas siguen mostrando el vencimiento de la cuota.** Recargar el server NO lo corrige: el código decide qué se guarda al generar una rutina nueva, no reescribe lo ya guardado |
 
 Los dos son idempotentes: correrlos dos veces deja el mismo resultado.
 
@@ -120,16 +120,16 @@ ya no hay `MERCADOPAGO_REDIRECT_URI` de OAuth que armar.
 
 ## 1. Tablero
 
-| Id | Prioridad | Tarea | Toca | Rompe al front |
-|---|---|---|---|---|
-| [D1](#d1--comprar-el-dominio--antes-del-deploy) | **P0** | Comprar el dominio | **Nada de código** — es una compra | No |
-| [D2](#d2--tier-de-pago-para-el-backend--al-primer-gimnasio-que-pague) | P2 | Tier de pago para el backend | **Nada de código** — es config de hosting | No |
-| [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) | ✅ hecho | Pantalla de facturación: CUIT, punto de venta, condición fiscal y credencial propia de AFIP SDK (apiKey + .crt + .key) | **Front** — hecho y verificado en vivo el 21-08 | No — campos nuevos |
-| [F2](#f2--vencimiento-de-rutinas-textos-y-contadores) | ✅ hecho | Vencimiento de rutinas: textos y contadores | **Front** — verificado, no necesitó cambios | No — mismo campo, otro significado |
-| [F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación) | ✅ hecho | Pantalla de Mercado Pago: conectar cuenta, catálogo de planes y botón de renovación en la ficha del socio | **Front** — hecho y verificado en vivo el 21-08 | No — flujo nuevo |
-| [S1](#01-correr-los-dos-scripts-contra-la-base-) | **P1** | Correr `purge:afip-keys` y `backfill:vencimiento-rutinas` | **Nada de código** — es ejecutar dos scripts | No |
-| [S2](#04-probar-mercado-pago-contra-una-cuenta-real-) | P2 | Cargar una credencial real de Mercado Pago y probar el flujo | **Nada de código** — carga de credencial + prueba manual | No |
-| [P3-B](#p3-b--embudo-en-la-serie-mensual) | P3 | Embudo en la serie mensual | `GetGymKpisSeriesUseCase` + `IMetricsRepository` | No — aditivo |
+| Id                                                                          | Prioridad | Tarea                                                                                                                  | Toca                                                     | Rompe al front                     |
+| --------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------- |
+| [D1](#d1--comprar-el-dominio--antes-del-deploy)                             | **P0**    | Comprar el dominio                                                                                                     | **Nada de código** — es una compra                       | No                                 |
+| [D2](#d2--tier-de-pago-para-el-backend--al-primer-gimnasio-que-pague)       | P2        | Tier de pago para el backend                                                                                           | **Nada de código** — es config de hosting                | No                                 |
+| [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio)         | ✅ hecho  | Pantalla de facturación: CUIT, punto de venta, condición fiscal y credencial propia de AFIP SDK (apiKey + .crt + .key) | **Front** — hecho y verificado en vivo el 21-08          | No — campos nuevos                 |
+| [F2](#f2--vencimiento-de-rutinas-textos-y-contadores)                       | ✅ hecho  | Vencimiento de rutinas: textos y contadores                                                                            | **Front** — verificado, no necesitó cambios              | No — mismo campo, otro significado |
+| [F3](#f3--pantalla-de-mercado-pago-conectar-catálogo-y-botón-de-renovación) | ✅ hecho  | Pantalla de Mercado Pago: conectar cuenta, catálogo de planes y botón de renovación en la ficha del socio              | **Front** — hecho y verificado en vivo el 21-08          | No — flujo nuevo                   |
+| [S1](#01-correr-los-dos-scripts-contra-la-base-)                            | **P1**    | Correr `purge:afip-keys` y `backfill:vencimiento-rutinas`                                                              | **Nada de código** — es ejecutar dos scripts             | No                                 |
+| [S2](#04-probar-mercado-pago-contra-una-cuenta-real-)                       | P2        | Cargar una credencial real de Mercado Pago y probar el flujo                                                           | **Nada de código** — carga de credencial + prueba manual | No                                 |
+| [P3-B](#p3-b--embudo-en-la-serie-mensual)                                   | P3        | Embudo en la serie mensual                                                                                             | `GetGymKpisSeriesUseCase` + `IMetricsRepository`         | No — aditivo                       |
 
 **No hay nada abierto del lado del código, ni backend ni front.** D1 y D2 son decisiones de
 infraestructura, no tareas de programación, pero D1 es **P0 porque bloquea el deploy**: sin
@@ -158,11 +158,11 @@ Hoy `AuthController` marca la cookie del refresh token como `sameSite: 'strict'`
 están en el mismo sitio registrable**. En desarrollo funciona porque `localhost:5173` y
 `localhost:4000` son el mismo sitio. En producción depende de dónde quede cada cosa:
 
-| Dónde queda cada cosa | ¿Viaja la cookie? | Qué pasa |
-|---|---|---|
-| `app.tudominio.com` + `api.tudominio.com` | Sí | ✅ Funciona sin tocar código |
-| Todo en un solo servicio, un solo origen | Sí | ✅ Funciona, y además **desaparece el CORS** |
-| `xxx.vercel.app` + `yyy.onrender.com` | **No** | ❌ `/auth/refresh` da 401 siempre: **nadie puede entrar** |
+| Dónde queda cada cosa                     | ¿Viaja la cookie? | Qué pasa                                                  |
+| ----------------------------------------- | ----------------- | --------------------------------------------------------- |
+| `app.tudominio.com` + `api.tudominio.com` | Sí                | ✅ Funciona sin tocar código                              |
+| Todo en un solo servicio, un solo origen  | Sí                | ✅ Funciona, y además **desaparece el CORS**              |
+| `xxx.vercel.app` + `yyy.onrender.com`     | **No**            | ❌ `/auth/refresh` da 401 siempre: **nadie puede entrar** |
 
 La tercera fila es la trampa, y es el camino por defecto si uno deploya sin pensarlo:
 `.vercel.app` y `.onrender.com` están en la Public Suffix List, así que cuentan como sitios
@@ -190,10 +190,10 @@ Lo que **no** resuelve el cron es el cold start del usuario: si el servicio se d
 dueño del gimnasio que abre el CRM espera ~50 segundos a que levante. Eso no se arregla con
 arquitectura, se arregla pagando.
 
-| Etapa | Qué conviene |
-|---|---|
-| Pre-revenue, demos | Free tier + `INVOICE_WORKER_MODE=cron`. Se aceptan los cold starts a cambio de $0 |
-| Primer gimnasio pagando | Instancia always-on (~USD 7/mes). Se puede volver a `interno` o dejar el cron |
+| Etapa                   | Qué conviene                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| Pre-revenue, demos      | Free tier + `INVOICE_WORKER_MODE=cron`. Se aceptan los cold starts a cambio de $0 |
+| Primer gimnasio pagando | Instancia always-on (~USD 7/mes). Se puede volver a `interno` o dejar el cron     |
 
 MongoDB Atlas M0 es gratis y **no hiberna** — es una base, no un servicio web. No entra en
 esta decisión.
@@ -214,18 +214,18 @@ falta la credencial).
 
 #### Los datos que hacen falta para que salga una factura
 
-| Dato | Quién lo carga | Dónde | Obligatorio |
-|---|---|---|---|
-| **CUIT del gimnasio** | Dueño | `PUT /gyms/settings/afip` → `cuit` | Sí |
-| **Punto de venta** | Dueño | `PUT /gyms/settings/afip` → `puntoVenta` | Sí |
-| **Condición fiscal del gimnasio** | Dueño | `PUT /gyms/settings/afip` → `taxCondition` | Sí |
-| **Facturación activa** | Dueño | `PUT /gyms/settings/afip` → `isActive: true` | Sí |
-| **Access token de AFIP SDK** (`app.afipsdk.com`) | Dueño | `PUT /gyms/settings/afip/credenciales` → `apiKey` | Sí |
-| **Certificado `.crt`** | Dueño | `PUT /gyms/settings/afip/credenciales` → `cert` (archivo) | Sí |
-| **Clave privada `.key`** | Dueño | `PUT /gyms/settings/afip/credenciales` → `key` (archivo) | Sí |
-| **DNI del socio** | Dueño | `POST /clients` → `documento` | Sí |
-| **Condición fiscal del socio** | Dueño | `POST\|PUT /clients` → `condicionFiscal` | No — default `CONSUMIDOR_FINAL` |
-| **CUIT del socio** | Dueño | `POST\|PUT /clients` → `cuit` | Solo si el socio es `RESPONSABLE_INSCRIPTO` |
+| Dato                                             | Quién lo carga | Dónde                                                     | Obligatorio                                 |
+| ------------------------------------------------ | -------------- | --------------------------------------------------------- | ------------------------------------------- |
+| **CUIT del gimnasio**                            | Dueño          | `PUT /gyms/settings/afip` → `cuit`                        | Sí                                          |
+| **Punto de venta**                               | Dueño          | `PUT /gyms/settings/afip` → `puntoVenta`                  | Sí                                          |
+| **Condición fiscal del gimnasio**                | Dueño          | `PUT /gyms/settings/afip` → `taxCondition`                | Sí                                          |
+| **Facturación activa**                           | Dueño          | `PUT /gyms/settings/afip` → `isActive: true`              | Sí                                          |
+| **Access token de AFIP SDK** (`app.afipsdk.com`) | Dueño          | `PUT /gyms/settings/afip/credenciales` → `apiKey`         | Sí                                          |
+| **Certificado `.crt`**                           | Dueño          | `PUT /gyms/settings/afip/credenciales` → `cert` (archivo) | Sí                                          |
+| **Clave privada `.key`**                         | Dueño          | `PUT /gyms/settings/afip/credenciales` → `key` (archivo)  | Sí                                          |
+| **DNI del socio**                                | Dueño          | `POST /clients` → `documento`                             | Sí                                          |
+| **Condición fiscal del socio**                   | Dueño          | `POST\|PUT /clients` → `condicionFiscal`                  | No — default `CONSUMIDOR_FINAL`             |
+| **CUIT del socio**                               | Dueño          | `POST\|PUT /clients` → `cuit`                             | Solo si el socio es `RESPONSABLE_INSCRIPTO` |
 
 Más el **monto de la cuota**, que va en `POST /clients/:id/renew` y es lo que dispara todo.
 
@@ -237,7 +237,7 @@ más abajo). Detalle completo del porqué en
 
 #### 1. Configurar la identidad fiscal — `PUT /api/gyms/settings/afip`
 
-Todos los campos son opcionales *en el request* (se puede guardar de a uno), pero los cuatro
+Todos los campos son opcionales _en el request_ (se puede guardar de a uno), pero los cuatro
 tienen que estar cargados —y las credenciales del paso 2— para poder emitir.
 
 ```bash
@@ -262,21 +262,21 @@ curl -X PUT http://localhost:4000/api/gyms/settings/afip \
       "puntoVenta": 4,
       "taxCondition": "MONOTRIBUTO",
       "isActive": true,
-      "hasApiKey": false,          // false hasta el paso 2
+      "hasApiKey": false, // false hasta el paso 2
       "hasCert": false,
       "hasKey": false,
-      "credencialesActualizadasEn": null
-    }
-  }
+      "credencialesActualizadasEn": null,
+    },
+  },
 }
 ```
 
-| Campo | Validación | Si está mal |
-|---|---|---|
-| `cuit` | Mínimo 11 caracteres al guardar; **exactamente 11 dígitos** tras sacar guiones y puntos al emitir | `400` al guardar si es más corto. `409 A gym with this CUIT already exists` si otro gimnasio ya lo usa. Si tiene otra cantidad de dígitos, la factura queda en `error` con el detalle |
-| `puntoVenta` | Entero positivo | `400` |
-| `taxCondition` | Solo `MONOTRIBUTO` o `RESPONSABLE_INSCRIPTO` | `400`. **`EXENTO` ya no existe**: le discriminaba IVA a quien no debe |
-| `isActive` | Booleano | Con `false`, la factura queda en `error`: *"La facturación AFIP no está activa para este gimnasio"* |
+| Campo          | Validación                                                                                        | Si está mal                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cuit`         | Mínimo 11 caracteres al guardar; **exactamente 11 dígitos** tras sacar guiones y puntos al emitir | `400` al guardar si es más corto. `409 A gym with this CUIT already exists` si otro gimnasio ya lo usa. Si tiene otra cantidad de dígitos, la factura queda en `error` con el detalle |
+| `puntoVenta`   | Entero positivo                                                                                   | `400`                                                                                                                                                                                 |
+| `taxCondition` | Solo `MONOTRIBUTO` o `RESPONSABLE_INSCRIPTO`                                                      | `400`. **`EXENTO` ya no existe**: le discriminaba IVA a quien no debe                                                                                                                 |
+| `isActive`     | Booleano                                                                                          | Con `false`, la factura queda en `error`: _"La facturación AFIP no está activa para este gimnasio"_                                                                                   |
 
 #### 2. Cargar la credencial propia — `PUT /api/gyms/settings/afip/credenciales`
 
@@ -303,29 +303,29 @@ curl -X PUT http://localhost:4000/api/gyms/settings/afip/credenciales \
       "hasApiKey": true,
       "hasCert": true,
       "hasKey": true,
-      "credencialesActualizadasEn": "2026-08-20T18:30:00.000Z"
-    }
-  }
+      "credencialesActualizadasEn": "2026-08-20T18:30:00.000Z",
+    },
+  },
 }
 ```
 
 **Nunca devuelve el contenido cargado**, ni cifrado ni en claro — solo los `has*` y la
 fecha. Si la pantalla necesita mostrar "credencial cargada el 20/08", es de acá.
 
-| Error | Causa | Cómo se ve |
-|---|---|---|
-| `400` | No se mandó ninguno de los tres campos | `"Hay que enviar al menos una credencial (apiKey, cert o key)"` |
-| `400` | El `.crt` no tiene forma de PEM (no contiene `BEGIN CERTIFICATE`) | `"El archivo .crt no tiene forma de certificado PEM..."` |
-| `400` | El `.key` no tiene forma de PEM (no contiene `PRIVATE KEY`) | `"El archivo .key no tiene forma de clave privada PEM..."` |
-| `400` | El gym todavía no configuró su identidad fiscal (paso 1) | `"El gimnasio todavía no tiene configurada su identidad fiscal..."` — hacer el paso 1 primero |
-| `413` | Un archivo pasa los 64KB | Multer corta ahí a propósito: un `.crt`/`.key` real nunca se acerca a ese tamaño |
+| Error | Causa                                                             | Cómo se ve                                                                                    |
+| ----- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `400` | No se mandó ninguno de los tres campos                            | `"Hay que enviar al menos una credencial (apiKey, cert o key)"`                               |
+| `400` | El `.crt` no tiene forma de PEM (no contiene `BEGIN CERTIFICATE`) | `"El archivo .crt no tiene forma de certificado PEM..."`                                      |
+| `400` | El `.key` no tiene forma de PEM (no contiene `PRIVATE KEY`)       | `"El archivo .key no tiene forma de clave privada PEM..."`                                    |
+| `400` | El gym todavía no configuró su identidad fiscal (paso 1)          | `"El gimnasio todavía no tiene configurada su identidad fiscal..."` — hacer el paso 1 primero |
+| `413` | Un archivo pasa los 64KB                                          | Multer corta ahí a propósito: un `.crt`/`.key` real nunca se acerca a ese tamaño              |
 
 #### 3. Leer lo ya configurado — `GET /api/gyms/settings`
 
 ```jsonc
 {
   "data": {
-    "cuit": "30-71234567-1",        // ← en la RAÍZ, no dentro de afipConfig
+    "cuit": "30-71234567-1", // ← en la RAÍZ, no dentro de afipConfig
     "afipConfig": {
       "puntoVenta": 4,
       "taxCondition": "MONOTRIBUTO",
@@ -333,9 +333,9 @@ fecha. Si la pantalla necesita mostrar "credencial cargada el 20/08", es de acá
       "hasApiKey": true,
       "hasCert": true,
       "hasKey": true,
-      "credencialesActualizadasEn": "2026-08-20T18:30:00.000Z"
-    }
-  }
+      "credencialesActualizadasEn": "2026-08-20T18:30:00.000Z",
+    },
+  },
 }
 ```
 
@@ -375,11 +375,11 @@ la edición (evalúa el estado **final** del socio: lo que llega más lo que ya 
 No solo de la del gimnasio: también de la del socio. Es lo más importante para armar los
 guiones de prueba de abajo.
 
-| Gym (`taxCondition`) | Socio (`condicionFiscal`) | Comprobante | IVA | Se factura a |
-|---|---|---|---|---|
-| `MONOTRIBUTO` | *(cualquiera)* | **Factura C** (código 11) | No se discrimina: neto = total | DNI del socio |
-| `RESPONSABLE_INSCRIPTO` | `CONSUMIDOR_FINAL` (default) | **Factura B** (código 6) | Se desagrega del precio | DNI del socio |
-| `RESPONSABLE_INSCRIPTO` | `RESPONSABLE_INSCRIPTO` | **Factura A** (código 1) | Se desagrega del precio | **CUIT del socio**, no su DNI |
+| Gym (`taxCondition`)    | Socio (`condicionFiscal`)    | Comprobante               | IVA                            | Se factura a                  |
+| ----------------------- | ---------------------------- | ------------------------- | ------------------------------ | ----------------------------- |
+| `MONOTRIBUTO`           | _(cualquiera)_               | **Factura C** (código 11) | No se discrimina: neto = total | DNI del socio                 |
+| `RESPONSABLE_INSCRIPTO` | `CONSUMIDOR_FINAL` (default) | **Factura B** (código 6)  | Se desagrega del precio        | DNI del socio                 |
+| `RESPONSABLE_INSCRIPTO` | `RESPONSABLE_INSCRIPTO`      | **Factura A** (código 1)  | Se desagrega del precio        | **CUIT del socio**, no su DNI |
 
 Un gimnasio monotributista **siempre** emite Factura C, sin mirar al socio — no hace falta
 (ni sirve) marcarlo como Responsable Inscripto para probar ese caso.
@@ -415,7 +415,10 @@ curl -X POST http://localhost:4000/api/internal/jobs/emit-invoices \
 
 ```jsonc
 // Response 200
-{ "status": "success", "data": { "procesadas": 1, "emitidas": 1, "fallidas": 0, "truncado": false } }
+{
+  "status": "success",
+  "data": { "procesadas": 1, "emitidas": 1, "fallidas": 0, "truncado": false },
+}
 ```
 
 Si `fallidas > 0`, el motivo está en `errorLog` de la factura (`GET /invoices`), no en esta
@@ -426,12 +429,12 @@ respuesta.
 Query params: `clientId`, `estado`, `tipoComprobante`, `cae`, `emitidaDesde`,
 `emitidaHasta`, `page` (default 1), `limit` (default 20, **máximo 100**).
 
-| Estado | Qué mostrar |
-|---|---|
-| `pendiente` | "En cola". Recién renovado, todavía no fue a ARCA |
-| `emitida` | El comprobante real: `cae`, `vencimientoCae`, `numeroComprobante`, `puntoVenta`, `tipoComprobante` (ahora puede ser **A**, B o C), `neto`, `iva` |
-| `error` | Falló. **Mostrar `errorLog`**: dice exactamente qué dato corregir |
-| `anulada` | Existe en el dominio pero **nada lo produce todavía** — la nota de crédito está sin implementar |
+| Estado      | Qué mostrar                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pendiente` | "En cola". Recién renovado, todavía no fue a ARCA                                                                                                |
+| `emitida`   | El comprobante real: `cae`, `vencimientoCae`, `numeroComprobante`, `puntoVenta`, `tipoComprobante` (ahora puede ser **A**, B o C), `neto`, `iva` |
+| `error`     | Falló. **Mostrar `errorLog`**: dice exactamente qué dato corregir                                                                                |
+| `anulada`   | Existe en el dominio pero **nada lo produce todavía** — la nota de crédito está sin implementar                                                  |
 
 También están `GET /api/invoices/:id` para el detalle y
 `GET /api/invoices/revenue?desde=&hasta=` para el reporte de ingresos.
@@ -459,6 +462,7 @@ app con la pantalla que construya el front). Variables usadas en los curl:
 `$GYM_TOKEN` (login del dueño del gym), `$CLIENT_ID`, `$INVOICE_CRON_SECRET` (del `.env`).
 
 **Guion A — Monotributo → Factura C**
+
 1. `PUT /gyms/settings/afip` — `taxCondition: "MONOTRIBUTO"`, `isActive: true`.
 2. `PUT /gyms/settings/afip/credenciales` — `apiKey` + `cert` + `key` reales de AFIP SDK.
 3. `POST /clients` — un socio con `documento` de 7-8 dígitos, sin `condicionFiscal`.
@@ -468,6 +472,7 @@ app con la pantalla que construya el front). Variables usadas en los curl:
 7. `GET /invoices` → `estado: "emitida"`, `cae` presente, `neto === monto`, `iva === 0`.
 
 **Guion B — Responsable Inscripto + socio consumidor final → Factura B**
+
 1. Igual que arriba pero `taxCondition: "RESPONSABLE_INSCRIPTO"`.
 2. Cargar credenciales (paso 2).
 3. Socio sin `condicionFiscal` (queda `CONSUMIDOR_FINAL` por default).
@@ -475,7 +480,8 @@ app con la pantalla que construya el front). Variables usadas en los curl:
 5. Verificar: `tipoComprobante: "Factura B"`, `neto + iva === monto` (al centavo), `iva > 0`.
 
 **Guion C — Responsable Inscripto + socio Responsable Inscripto → Factura A**
-*(El caso nuevo — no existía antes del 20-08, es el que más vale probar.)*
+_(El caso nuevo — no existía antes del 20-08, es el que más vale probar.)_
+
 1. Gym `RESPONSABLE_INSCRIPTO` con credenciales cargadas (como en B).
 2. `PUT /clients/:id` — `{ "condicionFiscal": "RESPONSABLE_INSCRIPTO", "cuit": "30711122238" }`.
 3. Renovar: `GET /invoices` de la pendiente ya dice `tipoComprobante: "Factura A"`.
@@ -485,13 +491,15 @@ app con la pantalla que construya el front). Variables usadas en los curl:
    automatizado, interceptando la llamada (ver el e2e).
 
 **Guion de error 1 — sin credenciales cargadas**
+
 1. Configurar identidad fiscal (paso 1) pero **saltear** el paso 2.
 2. Renovar → encola igual (la renovación nunca depende de la credencial).
 3. Emitir → `fallidas: 1`.
-4. `GET /invoices` → `estado: "error"`, `errorLog` menciona *"no cargó su certificado, clave
-   privada o API key"*. **No reintenta sola** (es un error de configuración, no transitorio).
+4. `GET /invoices` → `estado: "error"`, `errorLog` menciona _"no cargó su certificado, clave
+   privada o API key"_. **No reintenta sola** (es un error de configuración, no transitorio).
 
 **Guion de error 2 — socio marcado RI sin CUIT válido**
+
 1. `PUT /clients/:id` con `condicionFiscal: "RESPONSABLE_INSCRIPTO"` y `cuit` inválido (o
    ausente) → **`400` inmediato**, no llega a encolar nada mal.
 
@@ -526,11 +534,11 @@ socio, ahora es la vigencia del plan de entrenamiento —30 días desde que se g
 campo, su tipo y su lugar en el JSON no cambiaron, así que **nada rompe**, pero lo que hay
 alrededor puede haber quedado mintiendo.
 
-| Dónde | Qué revisar |
-|---|---|
-| Listado de rutinas | Cualquier texto que diga "vence la membresía" o similar al lado de `fechaVencimiento`. Ahora es la rutina la que vence |
+| Dónde                                      | Qué revisar                                                                                                                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Listado de rutinas                         | Cualquier texto que diga "vence la membresía" o similar al lado de `fechaVencimiento`. Ahora es la rutina la que vence                                                                    |
 | Tarjeta "rutinas por vencer" del dashboard | `rutinasPorVencer.{en7Dias, en5Dias, en3Dias}` ahora **acumula**: los tres se anidan (`en3 ⊆ en5 ⊆ en7`) y los números van a subir. Si la UI los sumaba entre sí, estaría contando de más |
-| `GET /routines/expiring?days=N` | Pasó de "vencen el día N exacto" a "vencen dentro de N días" |
+| `GET /routines/expiring?days=N`            | Pasó de "vencen el día N exacto" a "vencen dentro de N días"                                                                                                                              |
 
 **Los dos vencimientos conviven y son distintos.** Si la pantalla muestra los dos, hay que
 distinguirlos: `client.fechaVencimiento` es hasta cuándo pagó, `routine.fechaVencimiento` es
@@ -553,14 +561,14 @@ catálogo de precios y el botón de renovación solo se pueden cargar/disparar d
 
 #### Lo que hace falta armar
 
-| Pieza | Dónde pega | Detalle |
-|---|---|---|
-| Botón "Conectar con Mercado Pago" | Configuración del gym | **GET autenticado** (fetch/axios) a `GET /gyms/settings/mercadopago/connect` → `{ url }`, y recién con esa URL en la mano, `window.open(url)` (ver ⚠️ abajo) |
-| Estado de conexión | Configuración del gym | `GET /gyms/settings` → `mercadoPagoConfig: { conectado, conectadoEn }` |
-| Botón "Desconectar" | Configuración del gym | `DELETE /gyms/settings/mercadopago` |
-| Catálogo de planes (CRUD de los 4 tipos) | Configuración del gym | `PUT /gyms/settings/membership-plans` — reemplaza la lista completa |
-| Botón **Renovación** en la ficha del socio | Ficha de cliente | Elegir plan → elegir método: **Efectivo** (`POST /clients/:id/renew` con `tipoPlan`, aplica al instante) o **Mercado Pago** (`POST /clients/:id/renewal-requests`, queda pendiente hasta el webhook) |
-| Badge "Renovación Pendiente (Plan)" | Listado/ficha de clientes | `GET /clients/:id/renewal-requests?estado=pendiente` — **no** es un campo de `Client` |
+| Pieza                                      | Dónde pega                | Detalle                                                                                                                                                                                              |
+| ------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Botón "Conectar con Mercado Pago"          | Configuración del gym     | **GET autenticado** (fetch/axios) a `GET /gyms/settings/mercadopago/connect` → `{ url }`, y recién con esa URL en la mano, `window.open(url)` (ver ⚠️ abajo)                                         |
+| Estado de conexión                         | Configuración del gym     | `GET /gyms/settings` → `mercadoPagoConfig: { conectado, conectadoEn }`                                                                                                                               |
+| Botón "Desconectar"                        | Configuración del gym     | `DELETE /gyms/settings/mercadopago`                                                                                                                                                                  |
+| Catálogo de planes (CRUD de los 4 tipos)   | Configuración del gym     | `PUT /gyms/settings/membership-plans` — reemplaza la lista completa                                                                                                                                  |
+| Botón **Renovación** en la ficha del socio | Ficha de cliente          | Elegir plan → elegir método: **Efectivo** (`POST /clients/:id/renew` con `tipoPlan`, aplica al instante) o **Mercado Pago** (`POST /clients/:id/renewal-requests`, queda pendiente hasta el webhook) |
+| Badge "Renovación Pendiente (Plan)"        | Listado/ficha de clientes | `GET /clients/:id/renewal-requests?estado=pendiente` — **no** es un campo de `Client`                                                                                                                |
 
 ⚠️ **`GET /gyms/settings/mercadopago/connect` devuelve JSON, no redirige.** Corregido
 el 21-08 tras detectarlo desde el front: la ruta está detrás de `authMiddleware` como el
@@ -585,7 +593,10 @@ curl http://localhost:4000/api/gyms/settings/mercadopago/connect \
 
 ```jsonc
 // Response 200
-{ "status": "success", "data": { "url": "https://auth.mercadopago.com/authorization?..." } }
+{
+  "status": "success",
+  "data": { "url": "https://auth.mercadopago.com/authorization?..." },
+}
 ```
 
 Si la plataforma no tiene `MERCADOPAGO_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` cargadas
@@ -631,10 +642,15 @@ curl -X POST http://localhost:4000/api/clients/$CLIENT_ID/renewal-requests \
 
 ```jsonc
 // Response 201
-{ "status": "success", "data": {
-  "id": "...", "estado": "pendiente", "initPoint": "https://www.mercadopago.com.ar/...",
-  "plan": { "tipo": "mensual", "duracionDias": 30, "monto": 15000 }
-} }
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "estado": "pendiente",
+    "initPoint": "https://www.mercadopago.com.ar/...",
+    "plan": { "tipo": "mensual", "duracionDias": 30, "monto": 15000 },
+  },
+}
 ```
 
 ⚠️ **No renueva en el momento.** El link se manda solo por WhatsApp si el socio tiene
@@ -650,12 +666,12 @@ que seguiría un test manual una vez que haya credenciales reales cargadas.
 
 #### 6. Leer el historial — `GET /api/clients/:id/renewal-requests`
 
-| Estado | Qué mostrar |
-|---|---|
+| Estado      | Qué mostrar                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
 | `pendiente` | "Esperando pago" — el link sigue siendo válido, se puede reenviar o cancelar con un cobro en efectivo |
-| `aprobado` | El socio ya está renovado (revisar `GET /clients/:id` para la fecha real) |
-| `rechazado` | El pago no se completó — se puede pedir un link nuevo |
-| `cancelado` | Lo reemplazó un pedido más nuevo, o se confirmó un cobro en efectivo mientras estaba pendiente |
+| `aprobado`  | El socio ya está renovado (revisar `GET /clients/:id` para la fecha real)                             |
+| `rechazado` | El pago no se completó — se puede pedir un link nuevo                                                 |
+| `cancelado` | Lo reemplazó un pedido más nuevo, o se confirmó un cobro en efectivo mientras estaba pendiente        |
 
 #### Checklist mínimo para que un cobro por Mercado Pago salga
 
@@ -1095,11 +1111,11 @@ condición—, que sí es de cada gym. Con la key por gimnasio, cualquier dueño
 cualquier cosa en ese campo y romperse la facturación solo, sin que la plataforma se
 enterara.
 
-| Qué se fue | De dónde |
-|---|---|
-| `afipConfig.encryptedApiKey` y `afipConfig.apiKeySecretRef` | `domain/entities/Gym.ts`, `GymSchema.ts` |
-| El campo `apiKey` del body | `gym.validator.ts`, `UpdateAfipConfigUseCase` (que ya no necesita `IEncryptionService`) |
-| La resolución gym-primero | `MongoGymSecretsRepository.getAfipApiKey()`, que ahora devuelve `AFIP_SDK_API_KEY` y nada más |
+| Qué se fue                                                  | De dónde                                                                                      |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `afipConfig.encryptedApiKey` y `afipConfig.apiKeySecretRef` | `domain/entities/Gym.ts`, `GymSchema.ts`                                                      |
+| El campo `apiKey` del body                                  | `gym.validator.ts`, `UpdateAfipConfigUseCase` (que ya no necesita `IEncryptionService`)       |
+| La resolución gym-primero                                   | `MongoGymSecretsRepository.getAfipApiKey()`, que ahora devuelve `AFIP_SDK_API_KEY` y nada más |
 
 El puerto perdió el parámetro: `getAfipApiKey()` sin `gymId`, porque pedirle un gimnasio a
 algo que siempre devuelve lo mismo es mentir en la firma.
@@ -1165,18 +1181,18 @@ arrancara 23:59 y terminara 00:01 imprimía un día distinto del que guardaba. A
 solo instante para toda la generación.
 
 **Los contadores del dashboard pasaron a acumular.** `countExpiringByDay` contaba las que
-vencían *exactamente* el día N, así que una rutina a 4 días no aparecía en `en7Dias`,
+vencían _exactamente_ el día N, así que una rutina a 4 días no aparecía en `en7Dias`,
 `en5Dias` ni `en3Dias`, y `en7Dias` no incluía a `en3Dias`. Se renombró a
 `countExpiringWithin` —"dentro de N días"— y los tres contadores ahora se anidan. La
 semántica no estaba fijada por ningún test contra Mongo; ahora sí, en
 `tests/integration/routine/MongoRoutineRepository.test.ts`.
 
-| Para el front | Qué cambia |
-|---|---|
-| `GET /routines` → `fechaVencimiento` | Mismo campo, mismo tipo, **otro significado**: ahora es la vigencia del plan. Cualquier texto que diga "vence la membresía" al lado de este dato ahora miente |
-| `GET /dashboard` → `rutinasPorVencer` | Los tres números **van a subir**: acumulan y leen la fecha correcta |
-| `GET /routines/expiring?days=N` | Ahora es "dentro de N días", no "el día N exacto" |
-| El PDF | El "Vence" y el "Plan vigente hasta el…" ya dicen la fecha del plan |
+| Para el front                         | Qué cambia                                                                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /routines` → `fechaVencimiento`  | Mismo campo, mismo tipo, **otro significado**: ahora es la vigencia del plan. Cualquier texto que diga "vence la membresía" al lado de este dato ahora miente |
+| `GET /dashboard` → `rutinasPorVencer` | Los tres números **van a subir**: acumulan y leen la fecha correcta                                                                                           |
+| `GET /routines/expiring?days=N`       | Ahora es "dentro de N días", no "el día N exacto"                                                                                                             |
+| El PDF                                | El "Vence" y el "Plan vigente hasta el…" ya dicen la fecha del plan                                                                                           |
 
 **Datos viejos:** las rutinas ya generadas conservan la fecha de la cuota.
 `npm run backfill:vencimiento-rutinas` las recalcula desde su `fechaGeneracion` (o su
@@ -1236,17 +1252,17 @@ compitiendo por el mismo lease.
 **Salió más barato de lo esperado** porque la arquitectura ya lo tenía previsto: el lease de
 `claimPendiente` es un `findOneAndUpdate` atómico en Mongo, así que la seguridad contra doble
 emisión **no dependía del temporizador**. El `tickEnCurso` del scheduler era una optimización,
-no la garantía. Y `EmitPendingInvoicesUseCase` ya lo decía en su docstring: *"quién lo llama y
-cada cuánto es problema del scheduler"*.
+no la garantía. Y `EmitPendingInvoicesUseCase` ya lo decía en su docstring: _"quién lo llama y
+cada cuánto es problema del scheduler"_.
 
-| Qué | Dónde |
-|---|---|
-| `INVOICE_WORKER_MODE` (`interno` \| `cron`), `INVOICE_CRON_SECRET`, `INVOICE_JOB_MAX` | `src/config/env.ts` |
-| Puerta del disparador, con comparación en tiempo constante | `src/interfaces/http/middlewares/internalAuthMiddleware.ts` |
-| El endpoint | `src/interfaces/http/controllers/InternalJobsController.ts` + `routes/internal.routes.ts` |
-| Montaje **antes** del `authMiddleware` global | `src/interfaces/http/routes/index.ts` |
-| El scheduler arranca solo en modo `interno` | `src/server.ts` |
-| Contrato del endpoint | [`docs/API_ENDPOINTS.md` §12 bis](docs/API_ENDPOINTS.md) |
+| Qué                                                                                   | Dónde                                                                                     |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `INVOICE_WORKER_MODE` (`interno` \| `cron`), `INVOICE_CRON_SECRET`, `INVOICE_JOB_MAX` | `src/config/env.ts`                                                                       |
+| Puerta del disparador, con comparación en tiempo constante                            | `src/interfaces/http/middlewares/internalAuthMiddleware.ts`                               |
+| El endpoint                                                                           | `src/interfaces/http/controllers/InternalJobsController.ts` + `routes/internal.routes.ts` |
+| Montaje **antes** del `authMiddleware` global                                         | `src/interfaces/http/routes/index.ts`                                                     |
+| El scheduler arranca solo en modo `interno`                                           | `src/server.ts`                                                                           |
+| Contrato del endpoint                                                                 | [`docs/API_ENDPOINTS.md` §12 bis](docs/API_ENDPOINTS.md)                                  |
 
 **La decisión no obvia — el tope por corrida.** `MAX_POR_TICK = 5` con un tick de 15s da 20
 facturas por minuto. Un cron cada 5 minutos con ese mismo tope daría **1 por minuto**: una
@@ -1260,8 +1276,8 @@ El chequeo de tiempo va **antes** de reclamar la factura, no después: tomar una
 emitirla la dejaría reservada 5 minutos por el lease sin que nadie lo haya intentado.
 
 **Seguridad.** El secreto es global y estático, distinto del `webhookSecret` por-gym del
-onboarding: aquel identifica **a qué gimnasio** pertenece una submission, este solo dice *"el
-que llama es nuestro cron"*. Se compara hasheando a 32 bytes antes de `timingSafeEqual`,
+onboarding: aquel identifica **a qué gimnasio** pertenece una submission, este solo dice _"el
+que llama es nuestro cron"_. Se compara hasheando a 32 bytes antes de `timingSafeEqual`,
 porque esa función **lanza** si los buffers miden distinto — sin el hash, un secreto de otro
 largo daría 500 en vez de 401, y ese 500 delataría el largo del secreto real. Sin
 `INVOICE_CRON_SECRET` el endpoint responde **503, no 200**: se cierra, no se abre.
@@ -1287,11 +1303,11 @@ uso llama a algo, pero el armado del comprobante fiscal —tipo, desglose de IVA
 emisor— vive en `AfipSdkAdapter`. Mockear más arriba dejaría sin probar justo lo que hay que
 verificar antes de apuntar al homologación real.
 
-| | Monotributo | Responsable Inscripto |
-|---|---|---|
-| Comprobante | Factura C (código 11) | Factura B (código 6) |
-| IVA | **No discrimina** — neto = total | **Discrimina** — neto + IVA = total exacto |
-| Renovar habla con ARCA | No — queda `pendiente` | No — queda `pendiente` |
+|                        | Monotributo                      | Responsable Inscripto                      |
+| ---------------------- | -------------------------------- | ------------------------------------------ |
+| Comprobante            | Factura C (código 11)            | Factura B (código 6)                       |
+| IVA                    | **No discrimina** — neto = total | **Discrimina** — neto + IVA = total exacto |
+| Renovar habla con ARCA | No — queda `pendiente`           | No — queda `pendiente`                     |
 
 En ambos se verifica además que el CUIT del emisor viaje entero como número (cargado con
 guiones, el `parseInt` viejo devolvía `30`) y que el DNI del socio de **7 dígitos** viaje con
@@ -1313,9 +1329,9 @@ con la tolerancia correcta y el porqué escrito: ponerla estricta sería pedir e
 
 Hasta acá el `baseURL` estaba hardcodeado y no había forma de apuntar al homologación.
 
-| Variable | Qué hace |
-|---|---|
-| `AFIP_SDK_BASE_URL` | Host de la API REST. Vacía = `https://api.afipsdk.com` |
+| Variable               | Qué hace                                                             |
+| ---------------------- | -------------------------------------------------------------------- |
+| `AFIP_SDK_BASE_URL`    | Host de la API REST. Vacía = `https://api.afipsdk.com`               |
 | `AFIP_SDK_ENVIRONMENT` | **Obligatoria.** `dev` (homologación) o `prod` (comprobantes reales) |
 
 El `environment` viaja en el cuerpo del request y **se define en el `.env`, no se deriva de
@@ -1348,21 +1364,21 @@ que revisar no es esta variable sino el flujo entero del adaptador.
 Ocho problemas del flujo de facturación, cerrados de a uno. Los cinco primeros eran fallas
 que impedían facturar bien; los tres últimos, deuda estructural.
 
-| # | Qué pasaba | Cómo quedó |
-|---|---|---|
-| 1 | **`EXENTO` era una opción** y caía en la rama de Responsable Inscripto: le discriminaba IVA al 21% a quien no debe | Fuera del enum. Solo `MONOTRIBUTO` y `RESPONSABLE_INSCRIPTO`, que son las condiciones con fines de lucro |
-| 2 | **El CUIT nunca viajaba a AFIP.** `TenantApiConfig.cuit` se llenaba y el adaptador no lo usaba. Y `parseInt('20-12345678-9')` devuelve `20` sin quejarse | Va en el request. `normalizarCuit` exige once dígitos o falla explícito ([F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) para el front) |
-| 3 | **El tipo de comprobante se decidía dos veces**, en el adaptador y en el caso de uso, y `isConsumidorFinal` estaba fijo en `true` | Una sola tabla, `COMPROBANTE_POR_CONDICION`. El socio siempre es consumidor final: monotributista → **Factura C**, responsable inscripto → **Factura B**. La A no existe en este negocio |
-| 4 | **Se guardaba solo el CAE.** Se perdían número, punto de venta, vencimiento del CAE y el desglose de IVA | La factura guarda la terna que la identifica ante AFIP, el vencimiento, `neto`/`iva` y la descripción |
-| 5 | **Emisión sincrónica**: el socio esperaba en la ventanilla hasta 15s —el timeout del adaptador— para que le renovaran la cuota | La renovación deja la factura en `pendiente` y responde. Emite el worker |
-| 6 | **Sin reintentos.** Una factura en `error` quedaba muerta y `update()` no lo llamaba nadie | Backoff automático para fallos transitorios (5 intentos) y `POST /invoices/:id/retry` para los de validación |
-| 7 | **`invoiceWorker.ts` existía solo en `dist/`**: un `Worker` de BullMQ contra un Redis que ya no está en `src` | `InvoiceEmissionScheduler` in-process. La cola es la propia colección de facturas: sin Redis, y el estado sobrevive a los reinicios |
-| 8 | `baseURL` y endpoint hardcodeados con un comentario que prometía `env` | ~~Se quedan estáticos~~ → **revertido el 15-08**: `AFIP_SDK_BASE_URL` y `AFIP_SDK_ENVIRONMENT` son configurables, y desde el 19-08 el adaptador ya no las lee por su cuenta |
+| #   | Qué pasaba                                                                                                                                               | Cómo quedó                                                                                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **`EXENTO` era una opción** y caía en la rama de Responsable Inscripto: le discriminaba IVA al 21% a quien no debe                                       | Fuera del enum. Solo `MONOTRIBUTO` y `RESPONSABLE_INSCRIPTO`, que son las condiciones con fines de lucro                                                                                 |
+| 2   | **El CUIT nunca viajaba a AFIP.** `TenantApiConfig.cuit` se llenaba y el adaptador no lo usaba. Y `parseInt('20-12345678-9')` devuelve `20` sin quejarse | Va en el request. `normalizarCuit` exige once dígitos o falla explícito ([F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) para el front)                              |
+| 3   | **El tipo de comprobante se decidía dos veces**, en el adaptador y en el caso de uso, y `isConsumidorFinal` estaba fijo en `true`                        | Una sola tabla, `COMPROBANTE_POR_CONDICION`. El socio siempre es consumidor final: monotributista → **Factura C**, responsable inscripto → **Factura B**. La A no existe en este negocio |
+| 4   | **Se guardaba solo el CAE.** Se perdían número, punto de venta, vencimiento del CAE y el desglose de IVA                                                 | La factura guarda la terna que la identifica ante AFIP, el vencimiento, `neto`/`iva` y la descripción                                                                                    |
+| 5   | **Emisión sincrónica**: el socio esperaba en la ventanilla hasta 15s —el timeout del adaptador— para que le renovaran la cuota                           | La renovación deja la factura en `pendiente` y responde. Emite el worker                                                                                                                 |
+| 6   | **Sin reintentos.** Una factura en `error` quedaba muerta y `update()` no lo llamaba nadie                                                               | Backoff automático para fallos transitorios (5 intentos) y `POST /invoices/:id/retry` para los de validación                                                                             |
+| 7   | **`invoiceWorker.ts` existía solo en `dist/`**: un `Worker` de BullMQ contra un Redis que ya no está en `src`                                            | `InvoiceEmissionScheduler` in-process. La cola es la propia colección de facturas: sin Redis, y el estado sobrevive a los reinicios                                                      |
+| 8   | `baseURL` y endpoint hardcodeados con un comentario que prometía `env`                                                                                   | ~~Se quedan estáticos~~ → **revertido el 15-08**: `AFIP_SDK_BASE_URL` y `AFIP_SDK_ENVIRONMENT` son configurables, y desde el 19-08 el adaptador ya no las lee por su cuenta              |
 
 **Cómo funciona ahora la cola.** `claimPendiente` reserva con un solo `findOneAndUpdate`
 atómico e incrementa el contador **al tomar** la factura, no al fallar: si el proceso muere
 en la mitad de una emisión, ese intento igual se gastó. La reserva vence a los 5 minutos
-(*lease*), muy por encima del timeout de 15s del adaptador, así que dos ticks no pueden
+(_lease_), muy por encima del timeout de 15s del adaptador, así que dos ticks no pueden
 emitir el mismo comprobante — que ante AFIP no se borra, se anula con nota de crédito.
 
 **Un bug que apareció al testear:** `proximoIntento` tenía `default: Date.now` en el schema,
@@ -1429,7 +1445,7 @@ Se resolvió por la **opción 1: unificar el criterio**. `clientesActivos` y
 cambió y el front no tocó nada.
 
 > ⚠️ **El documento anterior afirmaba algo falso, y es la trampa a recordar.** Decía:
-> *"`MongoClientRepository` ya lo traduce. No hace falta tocar el repositorio."* **No lo
+> _"`MongoClientRepository` ya lo traduce. No hace falta tocar el repositorio."_ **No lo
 > traducía.** `vencimientoDesde` y `vencimientoHasta` estaban declarados en
 > `ClientSearchFilters` desde antes y `buildQuery` los ignoraba por completo: pasarlos no
 > filtraba nada, no fallaba y no avisaba. Siguiendo la instrucción al pie de la letra,
@@ -1560,11 +1576,11 @@ actualizaron y se agregó el caso de 8 días, que sí devuelve valor.
   `/checkins/heatmap`.
 - **El webhook no vuelve a crear clientes.** Un DNI desconocido es un tipeo, no un socio
   nuevo.
-- **`POST /clients/:id/contacto` no actualiza la fecha.** Mide el *primer* contacto.
+- **`POST /clients/:id/contacto` no actualiza la fecha.** Mide el _primer_ contacto.
 - **La serie sale de UNA sola lectura del historial.** Hay un test que cuenta invocaciones
   al puerto. Es la razón de existir del endpoint.
-- **`cohorte90Dias` no va en la serie.** Es móvil contra *hoy*, no una métrica del mes.
-  Dos tests fijan su ausencia. Si algún día se pide, es la cohorte *de cada mes*, que es
+- **`cohorte90Dias` no va en la serie.** Es móvil contra _hoy_, no una métrica del mes.
+  Dos tests fijan su ausencia. Si algún día se pide, es la cohorte _de cada mes_, que es
   otro cálculo y no este campo mudado de lugar.
 - **`Client.estado: 'inactivo'` es borrado lógico**, no una baja del gimnasio.
 - **Un socio vencido puede registrar ingreso** (es la señal de que volvió); uno `inactivo`
@@ -1600,19 +1616,19 @@ actualizaron y se agregó el caso de 8 días, que sí devuelve valor.
 
 ## 6. Dónde está cada cosa
 
-| Qué | Dónde |
-|---|---|
-| Contrato de la API, endpoint por endpoint | [`docs/API_ENDPOINTS.md`](docs/API_ENDPOINTS.md) |
-| Reglas transversales (envelope, tenant, `null`, unidades, fechas, zona horaria) | `docs/API_ENDPOINTS.md` §1 |
-| Semánticas que no se deducen del JSON (gracia, embudo, idempotencia, secreto) | `docs/API_ENDPOINTS.md`, en cada endpoint |
-| Definición de los KPIs y sus fórmulas | `kpis-gimnasio-dominio.md` |
-| Qué falta hacer | **este archivo** |
-| Qué tiene que mandar el front para facturar | **este archivo**, [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) |
-| Instalación del Apps Script del Form | `docs/google-forms/README.md` |
-| Variables de entorno, con el porqué de cada una | `.env.example` |
-| Scripts de mantenimiento (los dos hay que correrlos a mano) | `src/scripts/`, registrados en `package.json` |
-| Reglas de vigencia de una rutina | `src/domain/routine/vigencia.ts` |
-| Disparador interno del worker (no lo consume el front) | `docs/API_ENDPOINTS.md` §12 bis |
+| Qué                                                                             | Dónde                                                                                 |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Contrato de la API, endpoint por endpoint                                       | [`docs/API_ENDPOINTS.md`](docs/API_ENDPOINTS.md)                                      |
+| Reglas transversales (envelope, tenant, `null`, unidades, fechas, zona horaria) | `docs/API_ENDPOINTS.md` §1                                                            |
+| Semánticas que no se deducen del JSON (gracia, embudo, idempotencia, secreto)   | `docs/API_ENDPOINTS.md`, en cada endpoint                                             |
+| Definición de los KPIs y sus fórmulas                                           | `kpis-gimnasio-dominio.md`                                                            |
+| Qué falta hacer                                                                 | **este archivo**                                                                      |
+| Qué tiene que mandar el front para facturar                                     | **este archivo**, [F1](#f1--pantalla-de-facturación-qué-tiene-que-cargar-el-gimnasio) |
+| Instalación del Apps Script del Form                                            | `docs/google-forms/README.md`                                                         |
+| Variables de entorno, con el porqué de cada una                                 | `.env.example`                                                                        |
+| Scripts de mantenimiento (los dos hay que correrlos a mano)                     | `src/scripts/`, registrados en `package.json`                                         |
+| Reglas de vigencia de una rutina                                                | `src/domain/routine/vigencia.ts`                                                      |
+| Disparador interno del worker (no lo consume el front)                          | `docs/API_ENDPOINTS.md` §12 bis                                                       |
 
 ---
 
@@ -1628,7 +1644,7 @@ Ninguna bloquea nada. Están acá para no redescubrirlas.
   cookie sea `httpOnly`, pero es una promesa que la UI hace y el backend no cumple.
 - **`RefreshTokenUseCase` envuelve todo en un `try/catch` que traga el motivo real.**
   Un fallo de Mongo dentro del `execute` sale como `UnauthorizedError('Invalid or expired
-  refresh token')`, igual que un token falsificado. Si algún día el refresh empieza a
+refresh token')`, igual que un token falsificado. Si algún día el refresh empieza a
   rebotar de forma inexplicable, el mensaje va a mentir sobre la causa.
 - **Los tests unitarios dependen de Mongo.** `tests/setup.ts` levanta
   `mongodb-memory-server` en un `beforeAll` **global**, así que los unit tests de casos de
