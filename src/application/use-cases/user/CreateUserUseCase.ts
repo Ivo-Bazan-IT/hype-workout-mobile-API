@@ -8,7 +8,9 @@ interface CreateUserDTO {
   email: string;
   password: string;
   name: string;
-  gymId: string;
+  role: 'entrenador' | 'cliente';
+  gymId?: string;
+  entrenadorId?: string;
 }
 
 /**
@@ -22,9 +24,17 @@ export class CreateUserUseCase {
   ) {}
 
   async execute(dto: CreateUserDTO): Promise<User> {
-    const gym = await this.gymRepository.findById(dto.gymId);
-    if (!gym) {
-      throw new NotFoundError('Gym');
+    // Entrenador: no requiere gym existente (independiente)
+    if (dto.role === 'entrenador' && dto.gymId) {
+      const gym = await this.gymRepository.findById(dto.gymId);
+      if (!gym) {
+        throw new NotFoundError('Gym');
+      }
+    }
+
+    // Cliente: puede ser creado por entrenador (entrenadorId) o de forma autónoma (sin entrenadorId)
+    if (dto.role === 'cliente' && dto.entrenadorId) {
+      // El cliente deriva del entrenador si se proporciona entrenadorId
     }
 
     const existingUser = await this.userRepository.findByEmail(dto.email);
@@ -37,8 +47,9 @@ export class CreateUserUseCase {
     return this.userRepository.create({
       email: dto.email,
       passwordHash,
-      role: 'gym',
-      gymId: dto.gymId,
+      role: dto.role,
+      gymId: dto.gymId ?? null,
+      entrenadorId: dto.entrenadorId ?? null,
       name: dto.name,
       isActive: true,
     });

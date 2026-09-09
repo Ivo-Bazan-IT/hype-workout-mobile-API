@@ -23,7 +23,7 @@ export const requireGym = (
 ): void => {
   const user = req.user;
 
-  if (!user || user.role !== 'gym') {
+  if (!user || user.role !== 'entrenador') {
     throw new ForbiddenError('Gym access required');
   }
 

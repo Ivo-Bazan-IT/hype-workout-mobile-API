@@ -17,8 +17,9 @@ interface RefreshResponse {
     id: string;
     email: string;
     name: string;
-    role: 'admin' | 'gym';
+    role: 'admin' | 'entrenador' | 'cliente';
     gymId?: string | null;
+    entrenadorId?: string | null;
   };
 }
 
@@ -41,6 +42,7 @@ export class RefreshTokenUseCase {
           email: user.email,
           role: user.role,
           gymId: user.gymId,
+          entrenadorId: user.entrenadorId,
         },
         env.JWT_ACCESS_SECRET,
         { expiresIn: env.JWT_ACCESS_EXPIRES_IN } as any
@@ -54,6 +56,7 @@ export class RefreshTokenUseCase {
           name: user.name,
           role: user.role,
           gymId: user.gymId,
+          entrenadorId: user.entrenadorId,
         },
       };
     } catch {

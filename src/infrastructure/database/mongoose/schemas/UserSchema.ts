@@ -4,8 +4,9 @@ export interface UserDocument {
   _id: Types.ObjectId;
   email: string;
   passwordHash: string;
-  role: 'admin' | 'gym';
+  role: 'admin' | 'entrenador' | 'cliente';
   gymId?: Types.ObjectId;
+  entrenadorId?: Types.ObjectId;
   name: string;
   isActive: boolean;
   createdAt: Date;
@@ -15,11 +16,16 @@ export interface UserDocument {
 const userSchema = new Schema<UserDocument>({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'gym'], required: true },
+  role: { type: String, enum: ['admin', 'entrenador', 'cliente'], required: true },
   gymId: {
     type: Schema.Types.ObjectId,
     ref: 'Gym',
-    required: function () { return this.role === 'gym'; }
+    required: false,
+  },
+  entrenadorId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: false,
   },
   name: { type: String, required: true },
   isActive: { type: Boolean, default: true },

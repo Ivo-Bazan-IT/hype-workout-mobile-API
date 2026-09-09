@@ -11,6 +11,7 @@ export class MongoUserRepository implements IUserRepository {
       passwordHash: user.passwordHash,
       role: user.role,
       gymId: user.gymId,
+      entrenadorId: user.entrenadorId,
       name: user.name,
       isActive: user.isActive,
     });
@@ -80,6 +81,9 @@ export class MongoUserRepository implements IUserRepository {
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
     if (data.gymId !== undefined && data.gymId !== null) {
       updateData.gymId = data.gymId as unknown as UserDocument['gymId'];
+    }
+    if (data.entrenadorId !== undefined && data.entrenadorId !== null) {
+      updateData.entrenadorId = data.entrenadorId as unknown as UserDocument['entrenadorId'];
     }
 
     const doc = await UserModel.findByIdAndUpdate(id, updateData, { new: true });

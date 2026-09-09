@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 
-export type UserRole = 'admin' | 'gym';
+export type UserRole = 'admin' | 'entrenador' | 'cliente';
 
 export interface User {
   id: string;
@@ -8,6 +8,7 @@ export interface User {
   passwordHash: string;
   role: UserRole;
   gymId?: string | null;
+  entrenadorId?: string | null;
   name: string;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +24,7 @@ export class UserEntity implements User {
     public name: string,
     public isActive: boolean = true,
     public gymId: string | null = null,
+    public entrenadorId: string | null = null,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -38,6 +40,7 @@ export class UserMapper {
       doc.name,
       doc.isActive,
       doc.gymId?.toString(),
+      doc.entrenadorId?.toString() ?? null,
       doc.createdAt,
       doc.updatedAt
     );
@@ -50,6 +53,7 @@ export class UserMapper {
       passwordHash: entity.passwordHash,
       role: entity.role,
       gymId: entity.gymId ? new Types.ObjectId(entity.gymId) : undefined,
+      entrenadorId: entity.entrenadorId ? new Types.ObjectId(entity.entrenadorId) : undefined,
       name: entity.name,
       isActive: entity.isActive,
       createdAt: entity.createdAt,

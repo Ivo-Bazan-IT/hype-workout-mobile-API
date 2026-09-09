@@ -38,8 +38,13 @@ export const tenantMiddleware = (
     return next();
   }
 
-  if (user.role === 'gym' && user.gymId) {
+  if (user.role === 'entrenador' && user.gymId) {
     req.tenantId = user.gymId;
+    return next();
+  }
+
+  if (user.role === 'cliente' && user.entrenadorId) {
+    req.tenantId = user.entrenadorId;
     return next();
   }
 

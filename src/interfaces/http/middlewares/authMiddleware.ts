@@ -7,8 +7,9 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     userId: string;
     email: string;
-    role: 'admin' | 'gym';
+    role: 'admin' | 'entrenador' | 'cliente';
     gymId?: string;
+    entrenadorId?: string;
   };
 }
 
@@ -29,8 +30,9 @@ export const authMiddleware = (
     const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as {
       userId: string;
       email: string;
-      role: 'admin' | 'gym';
+      role: 'admin' | 'entrenador' | 'cliente';
       gymId?: string;
+      entrenadorId?: string;
     };
 
     req.user = decoded;

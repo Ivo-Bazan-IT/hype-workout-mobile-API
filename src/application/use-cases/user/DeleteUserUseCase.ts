@@ -19,8 +19,8 @@ export class DeleteUserUseCase {
       throw new NotFoundError('User');
     }
 
-    if (user.role !== 'gym') {
-      throw new ForbiddenError('Only gym owner users can be managed from this endpoint');
+    if (user.role !== 'entrenador' && user.role !== 'cliente') {
+      throw new ForbiddenError('Only entrenador or cliente users can be managed');
     }
 
     await this.userRepository.update(dto.userId, { isActive: false });

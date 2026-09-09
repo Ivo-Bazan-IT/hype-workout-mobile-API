@@ -23,6 +23,7 @@ export interface IUserRepository {
 export interface IUserTokenPayload {
   userId: string;
   email: string;
-  role: 'admin' | 'gym';
+  role: 'admin' | 'entrenador' | 'cliente';
   gymId?: string;
+  entrenadorId?: string;
 }

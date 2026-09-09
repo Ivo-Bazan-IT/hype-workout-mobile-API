@@ -16,8 +16,9 @@ interface AuthResponse {
     id: string;
     email: string;
     name: string;
-    role: 'admin' | 'gym';
+    role: 'admin' | 'entrenador' | 'cliente';
     gymId?: string | null;
+    entrenadorId?: string | null;
   };
 }
 
@@ -41,6 +42,11 @@ export class LoginUseCase {
       throw new UnauthorizedError('User account is deactivated');
     }
 
+    // Verificación intermedia: definir tipo según email guardado (entrenador o cliente)
+    if (user.role !== 'entrenador' && user.role !== 'cliente' && user.role !== 'admin') {
+      throw new UnauthorizedError('Unknown user type');
+    }
+
     // Generar tokens
     const accessToken = jwt.sign(
       {
@@ -48,6 +54,7 @@ export class LoginUseCase {
         email: user.email,
         role: user.role,
         gymId: user.gymId,
+        entrenadorId: user.entrenadorId,
       },
       env.JWT_ACCESS_SECRET,
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN } as any
@@ -68,6 +75,7 @@ export class LoginUseCase {
         name: user.name,
         role: user.role,
         gymId: user.gymId,
+        entrenadorId: user.entrenadorId,
       }
     };
   }

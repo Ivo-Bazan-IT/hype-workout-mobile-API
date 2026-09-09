@@ -11,6 +11,8 @@ import { createDashboardRouter } from './dashboard.routes';
 import { createAdminUserRoutes } from './user.routes';
 import { internalRoutes } from './internal.routes';
 import { mercadoPagoPublicRoutes } from './mercadopago.routes';
+import { UpdateClienteEntrenadorUseCase } from '../../../application/use-cases/user/UpdateClienteEntrenadorUseCase';
+import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { tenantMiddleware } from '../middlewares/tenantMiddleware';
 import { requireAdmin } from '../middlewares/roleMiddleware';
@@ -54,5 +56,31 @@ router.use('/routines', tenantMiddleware, routineRoutes);
 router.use('/onboarding', tenantMiddleware, onboardingStatusRoutes);
 // El dashboard aplica tenantMiddleware por-ruta: /summary es cross-gym y no lleva.
 router.use('/dashboard', createDashboardRouter());
+
+// Búsqueda pública de entrenadores (requiere autenticación)
+router.get('/entrenadores', authMiddleware, async (_req, res, next) => {
+  try {
+    const userRepo = new MongoUserRepository();
+    const result = await userRepo.search({ role: 'entrenador', isActive: true }, 1, 50);
+    res.json({ data: result.data, meta: { total: result.total } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Actualización del entrenador asociado al cliente
+router.put('/users/:id/entrenador', authMiddleware, async (req, res, next) => {
+  try {
+    const userRepo = new MongoUserRepository();
+    const useCase = new UpdateClienteEntrenadorUseCase(userRepo);
+    const updated = await useCase.execute({
+      userId: req.params.id,
+      entrenadorId: req.body.entrenadorId ?? null,
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

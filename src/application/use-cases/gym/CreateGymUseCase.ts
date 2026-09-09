@@ -90,7 +90,7 @@ export class CreateGymUseCase {
     const user = await this.userRepository.create({
       email: dto.adminEmail,
       passwordHash,
-      role: 'gym',
+      role: 'entrenador',
       gymId: gym.id,
       name: dto.adminName,
       isActive: true,

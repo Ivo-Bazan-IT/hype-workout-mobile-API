@@ -9,6 +9,7 @@ interface UpdateUserDTO {
   name?: string;
   isActive?: boolean;
   gymId?: string;
+  entrenadorId?: string;
 }
 
 /**
@@ -27,8 +28,8 @@ export class UpdateUserUseCase {
       throw new NotFoundError('User');
     }
 
-    if (user.role !== 'gym') {
-      throw new ForbiddenError('Only gym owner users can be managed from this endpoint');
+    if (user.role !== 'entrenador' && user.role !== 'cliente') {
+      throw new ForbiddenError('Only entrenador or cliente users can be managed');
     }
 
     if (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase()) {
@@ -50,6 +51,7 @@ export class UpdateUserUseCase {
       name: dto.name,
       isActive: dto.isActive,
       gymId: dto.gymId,
+      entrenadorId: dto.entrenadorId,
     });
 
     if (!updatedUser) {
