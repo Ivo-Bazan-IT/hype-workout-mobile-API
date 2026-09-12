@@ -58,6 +58,17 @@ export interface GymDocument {
     mpUserId?: string; // id de la cuenta de MP, resuelto vía GET /users/me — clave del webhook
     credencialesActualizadasEn?: Date;
   };
+  tipo?: 'gimnasio' | 'entrenador_independiente';
+  ownerUserId?: Types.ObjectId;
+  servicios?: {
+    id: string;
+    nombre: string;
+    descripcion?: string;
+    precio: number;
+    tipoCobro: 'unico' | 'recurrente';
+    duracionDias?: number;
+    activo: boolean;
+  }[];
   membershipPlans: {
     tipo: 'mensual' | 'trimestral' | 'semestral' | 'anual';
     duracionDias: number;
@@ -160,6 +171,22 @@ const gymSchema = new Schema<GymDocument>({
     credencialesActualizadasEn: { type: Date },
   },
 
+  tipo: { type: String, enum: ['gimnasio', 'entrenador_independiente'], default: 'gimnasio' },
+  ownerUserId: { type: Types.ObjectId, index: { sparse: true, unique: true } },
+  servicios: {
+    type: [
+      {
+        id: { type: String, required: true },
+        nombre: { type: String, required: true },
+        descripcion: { type: String },
+        precio: { type: Number, required: true },
+        tipoCobro: { type: String, enum: ['unico', 'recurrente'], required: true },
+        duracionDias: { type: Number },
+        activo: { type: Boolean, default: true },
+      },
+    ],
+    default: [],
+  },
   // Catálogo de precios por plan. Alimenta tanto el link de Mercado Pago como la
   // renovación manual en efectivo (POST /clients/:id/renew con tipoPlan).
   membershipPlans: {

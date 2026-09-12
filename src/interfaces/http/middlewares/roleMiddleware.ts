@@ -30,6 +30,22 @@ export const requireGym = (
   next();
 };
 
+export const requireEntrenador = requireGym;
+
+export const requireCliente = (
+  req: AuthenticatedRequest,
+  _res: Response,
+  next: NextFunction
+): void => {
+  const user = req.user;
+
+  if (!user || user.role !== 'cliente') {
+    throw new ForbiddenError('Client access required');
+  }
+
+  next();
+};
+
 export const requireAuth = (
   req: AuthenticatedRequest,
   _res: Response,

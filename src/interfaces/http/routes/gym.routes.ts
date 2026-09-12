@@ -13,6 +13,7 @@ import { UpdateWhatsappConfigUseCase } from '../../../application/use-cases/gym/
 import { UpdateGoogleFormConfigUseCase } from '../../../application/use-cases/gym/UpdateGoogleFormConfigUseCase';
 import { RotateGoogleFormSecretUseCase } from '../../../application/use-cases/gym/RotateGoogleFormSecretUseCase';
 import { UpdateMembershipPlansUseCase } from '../../../application/use-cases/gym/UpdateMembershipPlansUseCase';
+import { UpdateServiciosUseCase } from '../../../application/use-cases/client/UpdateServiciosUseCase';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 import { EncryptionService } from '../../../infrastructure/encryption/EncryptionService';
@@ -423,6 +424,22 @@ const createUserGymRouter = () => {
       next(error);
     }
   });
+
+  router.put(
+    '/settings/servicios',
+    async (req: AuthenticatedRequest, res, next) => {
+      try {
+        const updateServiciosUseCase = new UpdateServiciosUseCase(gymRepository);
+        const updatedGym = await updateServiciosUseCase.execute({
+          gymId: getTenantId(req),
+          servicios: req.body.servicios ?? [],
+        });
+        res.json({ status: 'success', data: { servicios: (updatedGym as any).servicios } });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   router.put(
     '/settings/membership-plans',

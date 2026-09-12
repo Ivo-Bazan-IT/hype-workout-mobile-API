@@ -11,10 +11,9 @@ import { createDashboardRouter } from './dashboard.routes';
 import { createAdminUserRoutes } from './user.routes';
 import { internalRoutes } from './internal.routes';
 import { mercadoPagoPublicRoutes } from './mercadopago.routes';
-import { UpdateClienteEntrenadorUseCase } from '../../../application/use-cases/user/UpdateClienteEntrenadorUseCase';
 import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
-import { authMiddleware } from '../middlewares/authMiddleware';
-import { tenantMiddleware } from '../middlewares/tenantMiddleware';
+import { authMiddleware, AuthenticatedRequest } from '../middlewares/authMiddleware';
+import { tenantMiddleware, getTenantId } from '../middlewares/tenantMiddleware';
 import { requireAdmin } from '../middlewares/roleMiddleware';
 
 const router = Router();
@@ -34,6 +33,19 @@ router.use('/internal', internalRoutes);
 // `mercadopago.routes.ts`. El resto de la integración (conectar, catálogo de
 // planes, pedir un link) sí requiere sesión y vive más abajo.
 router.use('/mercadopago', mercadoPagoPublicRoutes);
+
+// Registro público de entrenador independiente
+router.post('/auth/register/entrenador', async (req, res, next) => {
+  try {
+    const userRepo = new MongoUserRepository();
+    const gymRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoGymRepository').MongoGymRepository)();
+    const createUserUseCase = new (require('../../../application/use-cases/user/CreateUserUseCase').CreateUserUseCase)(userRepo, gymRepo);
+    const user = await createUserUseCase.execute({ ...req.body, role: 'entrenador' });
+    res.status(201).json({ status: 'success', data: user });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Protected routes - require authentication
 router.use(authMiddleware);
@@ -58,11 +70,85 @@ router.use('/onboarding', tenantMiddleware, onboardingStatusRoutes);
 router.use('/dashboard', createDashboardRouter());
 
 // Búsqueda pública de entrenadores (requiere autenticación)
-router.get('/entrenadores', authMiddleware, async (_req, res, next) => {
+router.get('/entrenadores', authMiddleware, async (req, res, next) => {
   try {
     const userRepo = new MongoUserRepository();
-    const result = await userRepo.search({ role: 'entrenador', isActive: true }, 1, 50);
-    res.json({ data: result.data, meta: { total: result.total } });
+    const searchEntrenadoresUseCase = new (require('../../../application/use-cases/user/SearchEntrenadoresUseCase').SearchEntrenadoresUseCase)(userRepo);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const result = await searchEntrenadoresUseCase.execute({ page, limit });
+    const data = result.data.map((user: any) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      perfilPublico: user.perfilPublico,
+      gymId: user.gymId,
+    }));
+    res.json({ status: 'success', data, meta: { total: result.total, page, limit } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/services/:servicioId/payment-links', authMiddleware, tenantMiddleware, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const gymId = getTenantId(req);
+    const ServiceRepoClass = require('../../../infrastructure/database/mongoose/repositories/MongoServicePaymentRequestRepository').MongoServicePaymentRequestRepository;
+    const serviceRepo = ServiceRepoClass ? new ServiceRepoClass() : null;
+    // Placeholder: si no hay repositorio específico, usar el caso de uso con repositorio temporal
+    const clientRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoClientRepository').MongoClientRepository)();
+    const gymRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoGymRepository').MongoGymRepository)();
+    const gymSecretsRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoGymSecretsRepository').MongoGymSecretsRepository)(new (require('../../../infrastructure/encryption/EncryptionService').EncryptionService)());
+    const paymentFactory = new (require('../../../infrastructure/external/payments/MercadoPagoAdapterFactory').MercadoPagoAdapterFactory)();
+    const whatsappFactory = new (require('../../../infrastructure/external/whatsapp/MetaCloudApiProviderFactory').MetaCloudApiProviderFactory)();
+    const useCase = new (require('../../../application/use-cases/payments/CreateServicePaymentLinkUseCase').CreateServicePaymentLinkUseCase)(
+      clientRepo, gymRepo, gymSecretsRepo, serviceRepo, paymentFactory, whatsappFactory
+    );
+    const result = await useCase.execute({
+      servicioId: req.params.servicioId,
+      gymId,
+      clientId: req.body.clientId || req.user!.userId,
+    });
+    res.status(201).json({ status: 'success', data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Encuesta pendiente (antes de elegir entrenador)
+router.patch('/survey/pending', authMiddleware, async (req: any, res, next) => {
+  try {
+    const PendingRepo = require('../../../infrastructure/database/mongoose/repositories/MongoPendingSurveyRepository').MongoPendingSurveyRepository;
+    const repo = new PendingRepo();
+    const result = await repo.createOrUpdate(req.user.userId, req.body);
+    res.json({ status: 'success', data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Perfil del usuario autenticado
+router.get('/users/me', authMiddleware, async (req: any, res, next) => {
+  try {
+    const userRepo = new MongoUserRepository();
+    const getUserUseCase = new (require('../../../application/use-cases/user/GetUserUseCase').GetUserUseCase)(userRepo);
+    const user = await getUserUseCase.execute({ userId: req.user.userId });
+    res.json({ status: 'success', data: user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/users/me/perfil', authMiddleware, async (req: any, res, next) => {
+  try {
+    const userRepo = new MongoUserRepository();
+    const gymRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoGymRepository').MongoGymRepository)();
+    const updateUserUseCase = new (require('../../../application/use-cases/user/UpdateUserUseCase').UpdateUserUseCase)(userRepo, gymRepo);
+    const updated = await updateUserUseCase.execute({
+      userId: req.user.userId,
+      ...req.body,
+    });
+    res.json({ status: 'success', data: updated });
   } catch (err) {
     next(err);
   }
@@ -72,12 +158,14 @@ router.get('/entrenadores', authMiddleware, async (_req, res, next) => {
 router.put('/users/:id/entrenador', authMiddleware, async (req, res, next) => {
   try {
     const userRepo = new MongoUserRepository();
-    const useCase = new UpdateClienteEntrenadorUseCase(userRepo);
-    const updated = await useCase.execute({
-      userId: req.params.id,
+    const clientRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoClientRepository').MongoClientRepository)();
+    const gymRepo = new (require('../../../infrastructure/database/mongoose/repositories/MongoGymRepository').MongoGymRepository)();
+    const useCase = new (require('../../../application/use-cases/user/SeleccionarEntrenadorUseCase').SeleccionarEntrenadorUseCase)(userRepo, clientRepo, gymRepo);
+    const result = await useCase.execute({
+      clienteUserId: req.params.id,
       entrenadorId: req.body.entrenadorId ?? null,
     });
-    res.json(updated);
+    res.json({ status: 'success', data: result });
   } catch (err) {
     next(err);
   }

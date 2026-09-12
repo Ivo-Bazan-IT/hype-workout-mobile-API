@@ -13,13 +13,13 @@ El trabajo se dividió en 5 tandas. **Las tandas 1 a 4 están implementadas**; l
 todavía no, y sus secciones en este documento quedan tal como se escribieron
 originalmente.
 
-| Tanda | Alcance | Estado |
-|---|---|---|
-| 1 | Funciones puras de dominio (`src/domain/kpis/`) | ✅ Implementada |
-| 2 | Retención y financieros con datos reales (`MembershipEvent`) | ✅ Implementada |
-| 3 | Engagement (`CheckIn`) | ✅ Implementada |
-| 4 | Embudo (§4, salvo §4.4) | ✅ Implementada |
-| 5 | Clases y capacidad (§2.3 y §5) | ⬜ Pendiente |
+| Tanda | Alcance                                                      | Estado          |
+| ----- | ------------------------------------------------------------ | --------------- |
+| 1     | Funciones puras de dominio (`src/domain/kpis/`)              | ✅ Implementada |
+| 2     | Retención y financieros con datos reales (`MembershipEvent`) | ✅ Implementada |
+| 3     | Engagement (`CheckIn`)                                       | ✅ Implementada |
+| 4     | Embudo (§4, salvo §4.4)                                      | ✅ Implementada |
+| 5     | Clases y capacidad (§2.3 y §5)                               | ⬜ Pendiente    |
 
 Donde el código se apartó de lo que dice este documento, la sección correspondiente lo
 aclara con el prefijo **Implementado:**. En esos puntos manda el código.
@@ -56,14 +56,14 @@ No estaban en la versión original de este documento y gobiernan todo el cálcul
 nuevos, que ejercitan la base y la API de verdad —Mongo en memoria y `supertest`— en vez
 de mocks:
 
-| Archivo | Tests | Qué cubre |
-|---|---|---|
-| `tests/integration/dashboard/MongoMetricsRepository.test.ts` | 17 | El pipeline `$sort`/`$group`/`$lookup`: agrupación por socio, orden preservado, exclusión de eliminados y de eventos huérfanos, pesos → centavos, ventanas sin vencimiento, las tres ramas de `getDataCutoff`, aislamiento por gym. |
-| `tests/integration/dashboard/MongoMembershipEventRepository.test.ts` | 12 | Que "no hubo cobro" ≠ "cobró cero" y "no consta el vencimiento" ≠ "no venció" sobrevivan a la base. |
-| `tests/integration/dashboard/seedMembershipEvents.test.ts` | 11 | Armado de eventos, idempotencia por gym, gym nuevo tras una corrida previa, exclusión de eliminados, y que el corte quede en el instante de la siembra. |
-| `tests/integration/checkin/MongoCheckInRepository.test.ts` | 11 | Recorte del día en `findByClientAndDay`, filtros, paginación, aislamiento. |
-| `tests/e2e/dashboardKpis.test.ts` | 28 | Contrato completo del endpoint, período por defecto, 400 de rango inválido, `null` antes del corte, churn/retención reales, y que alta, ajuste y renovación dejen su evento. |
-| `tests/e2e/checkins.test.ts` | 13 | Alta, idempotencia por día, 404 cross-tenant, 400 con socio eliminado, filtros y paginación. |
+| Archivo                                                              | Tests | Qué cubre                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/integration/dashboard/MongoMetricsRepository.test.ts`         | 17    | El pipeline `$sort`/`$group`/`$lookup`: agrupación por socio, orden preservado, exclusión de eliminados y de eventos huérfanos, pesos → centavos, ventanas sin vencimiento, las tres ramas de `getDataCutoff`, aislamiento por gym. |
+| `tests/integration/dashboard/MongoMembershipEventRepository.test.ts` | 12    | Que "no hubo cobro" ≠ "cobró cero" y "no consta el vencimiento" ≠ "no venció" sobrevivan a la base.                                                                                                                                 |
+| `tests/integration/dashboard/seedMembershipEvents.test.ts`           | 11    | Armado de eventos, idempotencia por gym, gym nuevo tras una corrida previa, exclusión de eliminados, y que el corte quede en el instante de la siembra.                                                                             |
+| `tests/integration/checkin/MongoCheckInRepository.test.ts`           | 11    | Recorte del día en `findByClientAndDay`, filtros, paginación, aislamiento.                                                                                                                                                          |
+| `tests/e2e/dashboardKpis.test.ts`                                    | 28    | Contrato completo del endpoint, período por defecto, 400 de rango inválido, `null` antes del corte, churn/retención reales, y que alta, ajuste y renovación dejen su evento.                                                        |
+| `tests/e2e/checkins.test.ts`                                         | 13    | Alta, idempotencia por día, 404 cross-tenant, 400 con socio eliminado, filtros y paginación.                                                                                                                                        |
 
 Un hallazgo del camino: el escenario de dos socios (uno que vence el 01/02 y no renueva,
 otro con vencimiento a fin de año) da churn 0.5 y retención 0.5 en febrero, con la baja
@@ -296,7 +296,7 @@ no había cancelado.
 > 0% con `now`.
 
 **Implementado** con `now` opcional que **censura** las cohortes jóvenes: quien no
-completó la ventana sale del numerador *y* del denominador. `cancelledAt` es la
+completó la ventana sale del numerador _y_ del denominador. `cancelledAt` es la
 **primera** baja del socio, la que devuelve `firstChurnDate`, no la última.
 
 ```typescript
@@ -399,7 +399,8 @@ export function findAtRiskMembers(input: {
   return members
     .filter((m) => {
       if (m.lastCheckInAt === null) return true;
-      const daysSince = (now.getTime() - m.lastCheckInAt.getTime()) / MS_PER_DAY;
+      const daysSince =
+        (now.getTime() - m.lastCheckInAt.getTime()) / MS_PER_DAY;
       return daysSince >= staleDays;
     })
     .map((m) => m.memberId);
@@ -455,10 +456,10 @@ bajas.
 
 ```typescript
 export interface MrrMovement {
-  readonly newMrr: Cents;         // altas nuevas
-  readonly expansionMrr: Cents;   // upgrades y reactivaciones
+  readonly newMrr: Cents; // altas nuevas
+  readonly expansionMrr: Cents; // upgrades y reactivaciones
   readonly contractionMrr: Cents; // downgrades
-  readonly churnedMrr: Cents;     // bajas
+  readonly churnedMrr: Cents; // bajas
 }
 
 /** MRR total = suma de cuotas recurrentes activas, normalizadas a mensual. */
@@ -614,7 +615,7 @@ Indicadores adelantados: predicen el ingreso con semanas de anticipación.
 > **Estado.** El bloque `embudo` sale en `GET /api/dashboard/kpis`. Los dos campos que
 > faltaban viven en `Client`: `fechaConversion` (sellado la primera vez que aparece
 > `encuestaData`, por cualquiera de los tres caminos: `POST /api/clients`, `PATCH
-> /api/clients/:id/encuesta` y el webhook del Form) y `fechaPrimerContacto` (lo graba
+/api/clients/:id/encuesta` y el webhook del Form) y `fechaPrimerContacto` (lo graba
 > `POST /api/clients/:id/contacto`, que es idempotente).
 >
 > **Implementado:** el bloque expone dos lecturas que conviene no confundir.
@@ -633,7 +634,7 @@ Indicadores adelantados: predicen el ingreso con semanas de anticipación.
 >   convertido**; los leads son los cargados a mano por `POST /api/clients` sin encuesta.
 >   Es al revés de lo que sugiere la intuición.
 > - **El benchmark de 30–50% de §4.2 no aplica tal cual.** En este CRM el pago ocurre
->   *antes* de la encuesta, así que la conversión mide compleción del onboarding, no
+>   _antes_ de la encuesta, así que la conversión mide compleción del onboarding, no
 >   conversión a socio que paga.
 > - **Los clientes anteriores a esta tanda cuentan como convertidos sin fecha.** Tienen
 >   `encuestaData` pero no `fechaConversion`: convirtieron de verdad y nadie registró
@@ -707,7 +708,9 @@ export function avgLeadResponseMinutes(
   if (contacted.length === 0) return null;
   const MS_PER_MIN = 60 * 1000;
   const totalMinutes = contacted.reduce((sum, l) => {
-    return sum + (l.firstContactedAt!.getTime() - l.createdAt.getTime()) / MS_PER_MIN;
+    return (
+      sum + (l.firstContactedAt!.getTime() - l.createdAt.getTime()) / MS_PER_MIN
+    );
   }, 0);
   return totalMinutes / contacted.length;
 }
@@ -881,9 +884,16 @@ export interface IMetricsRepository {
 }
 
 // ---- Caso de uso: compone datos + dominio ----
-const membersAtStart = historiales.filter((h) => isActiveAt(h.windows, periodo.start)).length;
-const bajas = historiales.filter((h) => churnedDuring(h.windows, transcurrido)).length;
-const churn = monthlyChurnRate({ membersAtStart, cancelledDuringPeriod: bajas });
+const membersAtStart = historiales.filter((h) =>
+  isActiveAt(h.windows, periodo.start),
+).length;
+const bajas = historiales.filter((h) =>
+  churnedDuring(h.windows, transcurrido),
+).length;
+const churn = monthlyChurnRate({
+  membersAtStart,
+  cancelledDuringPeriod: bajas,
+});
 ```
 
 Un detalle que no era obvio: **el período en curso se corta en `now`**. Si se piden los
@@ -902,12 +912,12 @@ métricas por query o read-model, y el churn predictivo aparece al cruzarlos.
 
 **Estado de los cuatro streams:**
 
-| Stream | Entidad | Estado |
-|---|---|---|
-| Eventos de membresía | `MembershipEvent` | ✅ tanda 2 |
-| Check-ins / asistencia | `CheckIn` | ✅ tanda 3 |
-| Transacciones | `MembershipEvent.monto` + `Invoice` | ✅ tanda 2 |
-| Embudo | — | ⬜ tanda 4 |
+| Stream                 | Entidad                             | Estado     |
+| ---------------------- | ----------------------------------- | ---------- |
+| Eventos de membresía   | `MembershipEvent`                   | ✅ tanda 2 |
+| Check-ins / asistencia | `CheckIn`                           | ✅ tanda 3 |
+| Transacciones          | `MembershipEvent.monto` + `Invoice` | ✅ tanda 2 |
+| Embudo                 | —                                   | ⬜ tanda 4 |
 
 **Por qué hizo falta `MembershipEvent`.** `Client.historialRenovaciones` guarda
 `{ fecha, monto }` y **no** a qué vencimiento llevó cada renovación. Sin ese dato es

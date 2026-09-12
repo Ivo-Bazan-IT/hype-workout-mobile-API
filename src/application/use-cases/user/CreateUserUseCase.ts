@@ -44,14 +44,45 @@ export class CreateUserUseCase {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
-    return this.userRepository.create({
+    let createdGymId: string | null = dto.gymId ?? null;
+
+    if (dto.role === 'entrenador' && !dto.gymId) {
+      // Aprovisionar Gym personal para entrenador independiente
+      const personalGym = await this.gymRepository.create({
+        name: dto.name,
+        businessName: dto.name,
+        cuit: '',
+        contactEmail: dto.email,
+        contactPhone: '',
+        tipo: 'entrenador_independiente',
+        ownerUserId: undefined,
+        isActive: true,
+        aiConfig: { provider: 'deepseek', promptTemplate: '' },
+        whatsappConfig: { phoneNumberId: '', tokenSecretRef: '' },
+        pdfTemplate: {},
+        googleFormConfig: {},
+        timezone: undefined,
+        afipConfig: { puntoVenta: 1, taxCondition: 'MONOTRIBUTO', isActive: false },
+      } as any);
+      createdGymId = personalGym.id;
+    }
+
+    const user = await this.userRepository.create({
       email: dto.email,
       passwordHash,
       role: dto.role,
-      gymId: dto.gymId ?? null,
+      gymId: createdGymId ?? null,
       entrenadorId: dto.entrenadorId ?? null,
       name: dto.name,
       isActive: true,
     });
+
+    // Actualizar el ownerUserId del Gym con el id real del usuario creado
+    if (dto.role === 'entrenador' && !dto.gymId && createdGymId) {
+      await this.gymRepository.update(createdGymId, { ownerUserId: user.id });
+      await this.userRepository.update(user.id, { gymId: createdGymId });
+    }
+
+    return user;
   }
 }

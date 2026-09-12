@@ -9,6 +9,8 @@ export interface Routine {
   clientId: string;
   promptUsado?: string;
   contenidoGenerado?: Record<string, any>;
+  editadoManualmente?: boolean;
+  contenidoOriginalIA?: Record<string, any>;
   pdfUrl?: string;
   estadoGeneracion: RoutineGenerationStatus;
   estadoEnvio: RoutineSendStatus;
@@ -29,6 +31,8 @@ export class RoutineEntity implements Routine {
     public fechaVencimiento: Date = new Date(),
     public promptUsado?: string,
     public contenidoGenerado?: Record<string, any>,
+    public editadoManualmente?: boolean,
+    public contenidoOriginalIA?: Record<string, any>,
     public pdfUrl?: string,
     public whatsappMessageId?: string,
     public fechaGeneracion?: Date,
@@ -48,6 +52,8 @@ export class RoutineMapper {
       doc.fechaVencimiento,
       doc.promptUsado,
       doc.contenidoGenerado,
+      doc.editadoManualmente,
+      doc.contenidoOriginalIA,
       doc.pdfUrl,
       doc.whatsappMessageId,
       doc.fechaGeneracion,
@@ -63,6 +69,8 @@ export class RoutineMapper {
       clientId: new Types.ObjectId(entity.clientId),
       promptUsado: entity.promptUsado,
       contenidoGenerado: entity.contenidoGenerado,
+      editadoManualmente: entity.editadoManualmente,
+      contenidoOriginalIA: entity.contenidoOriginalIA,
       pdfUrl: entity.pdfUrl,
       estadoGeneracion: entity.estadoGeneracion,
       estadoEnvio: entity.estadoEnvio,

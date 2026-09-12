@@ -960,6 +960,74 @@ volver a pedir la rutina solo para saber si salió.
 
 Reintenta el envío por WhatsApp.
 
+### `PUT /routines/:id/contenido`
+
+> JWT + `requireEntrenador`. Requiere que la rutina esté en `estadoGeneracion: 'generado'`.
+
+```json
+{ "contenidoEditado": { } }
+```
+
+Devuelve la rutina actualizada con `editadoManualmente: true`. En la **primera** edición guarda `contenidoOriginalIA` (copia del contenido generado por IA); ediciones siguientes solo actualizan `contenidoGenerado`.
+
+---
+
+### `GET /routines/:id/updates`
+
+Lista los `RoutineProgressUpdate` de esa rutina (`paginated` no aplica, es array).
+
+```json
+[
+  { "id": "string", "semana": 1, "datos": {}, "estado": "pendiente_revision | revisado", "createdAt": "ISO" }
+]
+```
+
+---
+
+### `POST /routines/:id/updates`
+
+> JWT + `requireEntrenador` o `requireCliente` (el `clientId` debe coincidir con el usuario).
+
+Upsert por `{ gymId, clientId, semana }`. Si ya existe un update para esa semana, lo actualiza (`datos` se reemplaza); si no, lo crea con `estado: 'pendiente_revision'`.
+
+```json
+{ "semana": 1, "datos": { } }
+```
+
+---
+
+### `GET /routines/:id/comments`
+
+Comentarios (`RoutineComment`) ordenados cronológicamente.
+
+---
+
+### `POST /routines/:id/comments`
+
+> JWT + `requireEntrenador` o `requireCliente`.
+
+```json
+{ "texto": "string (≤ 2000 chars)" }
+```
+
+`autorRol` y `autorUserId` se toman del JWT. `clientId` es opcional en el body; si no se pasa, se infiere del usuario (`cliente`) o queda vacío (`entrenador`).
+
+---
+
+### `GET /routines/me`
+
+> JWT + `requireCliente`. Devuelve las rutinas del `Client` vinculado al `userId` del JWT.
+
+---
+
+### `GET /routines/seguimiento` (dashboard del entrenador)
+
+> JWT + `requireEntrenador`. Equivale a `GET /trainer/dashboard/seguimiento`.
+
+Lista los `RoutineProgressUpdate` con `estado: 'pendiente_revision'` del `gymId` del entrenador.
+
+---
+
 ### `DELETE /routines/:id`
 
 Borrado duro — a diferencia del socio, la rutina no tiene estado `inactivo`. `{ status, message }`.
@@ -1399,6 +1467,26 @@ emisión de comprobantes ante AFIP accesible sin credencial es peor que uno caí
 **Correr dos veces en paralelo es seguro** — el lease atómico de `claimPendiente` impide
 que dos corridas se lleven la misma factura — pero no hace falta: `INVOICE_WORKER_MODE`
 elige uno u otro disparador, no los dos.
+
+### `POST /internal/jobs/check-weekly-updates`
+
+Dispara la verificación de seguimientos semanales (`RoutineProgressUpdate` en `pendiente_revision`). Usa `NoOpNotificationProvider` como adaptador inicial (log) — el mecanismo definitivo (pop-up / mobile) es del front.
+
+**Autenticación:** `x-internal-secret` (`INVOICE_CRON_SECRET` o el secreto interno configurado). **No lleva JWT**.
+
+Respuesta `200`:
+
+```json
+{ "status": "success", "data": { "notificados": 2 } }
+```
+
+| Código | Cuándo |
+|---|---|
+| `401` | Falta el header, o el secreto no coincide |
+| `429` | Más de 30 llamadas por minuto |
+| `503` | Secreto interno no configurado |
+
+El caso de uso (`CheckWeeklyUpdatesUseCase`) evita falsos positivos con un umbral de 3 días: los `RoutineProgressUpdate` creados en los últimos 3 días no se notifican, para no alertar sobre clientes recién asignados.
 
 ---
 

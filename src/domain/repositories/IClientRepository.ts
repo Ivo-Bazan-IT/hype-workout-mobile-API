@@ -39,5 +39,6 @@ export interface IClientRepository {
   count(gymId: string, filters: ClientSearchFilters): Promise<number>;
   update(id: string, gymId: string, data: Partial<Client>): Promise<Client | null>;
   delete(id: string, gymId: string): Promise<boolean>; // soft delete
+  findByUserId(userId: string, gymId: string): Promise<Client | null>;
   getExpiringSoon(gymId: string, days: number): Promise<Client[]>;
 }

@@ -23,6 +23,8 @@ import { registerFirstContactSchema, renewClientSchema, createRenewalRequestSche
 import { z } from 'zod';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
+import { ownClientMiddleware } from '../middlewares/ownClientMiddleware';
+import { MongoUserRepository } from '../../../infrastructure/database/mongoose/repositories/MongoUserRepository';
 
 // Middleware para validar query params
 function validateQuery(schema: z.ZodSchema<any>) {
@@ -108,6 +110,27 @@ export const createClientRoutes = () => {
   })), (req, res, next) =>
     clientController.search(req as AuthenticatedRequest, res, next)
   );
+
+  // POST /api/clients/:id/invitar - Invitar cliente a la app
+  router.post('/:id/invitar', (req: AuthenticatedRequest, res, next) => {
+    const gymId = getTenantId(req);
+    const inviteClientToAppUseCase = new (require('../../../application/use-cases/user/InviteClientToAppUseCase').InviteClientToAppUseCase)(
+      new MongoClientRepository(),
+      new MongoUserRepository()
+    );
+    inviteClientToAppUseCase.execute({ clientId: req.params.id, gymId })
+      .then((result: any) => res.json({ status: 'success', data: result }))
+      .catch((err: any) => next(err));
+  });
+
+  // GET /api/clients/me - Ficha del cliente autenticado (self-service)
+  router.get('/me', ownClientMiddleware, (req: any, res, next) => {
+    const ownClientId = (req as any).ownClientId;
+    if (!ownClientId) {
+      return res.status(404).json({ status: 'error', message: 'Client not found' });
+    }
+    clientController.get({ ...req, params: { id: ownClientId } } as AuthenticatedRequest, res, next);
+  });
 
   // GET /api/clients/expiring - Clientes próximos a vencer
   router.get('/expiring', (req, res, next) =>

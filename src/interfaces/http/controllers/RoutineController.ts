@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/GenerateRoutineUseCase';
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
+import { EditRoutineContentUseCase } from '../../../application/use-cases/routine/EditRoutineContentUseCase';
 import { DeleteRoutineUseCase } from '../../../application/use-cases/routine/DeleteRoutineUseCase';
 import { IRoutineRepository } from '../../../domain/repositories/IRoutineRepository';
 import { IClientRepository } from '../../../domain/repositories/IClientRepository';
@@ -12,7 +13,12 @@ import {
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { getTenantId } from '../middlewares/tenantMiddleware';
 import { IFileStorage } from '../../../domain/services/IFileStorage';
+import { SubmitRoutineProgressUpdateUseCase } from '../../../application/use-cases/routine/SubmitRoutineProgressUpdateUseCase';
+import { AddRoutineCommentUseCase } from '../../../application/use-cases/routine/AddRoutineCommentUseCase';
+import { ListRoutineProgressForTrainerUseCase } from '../../../application/use-cases/routine/ListRoutineProgressForTrainerUseCase';
 import { NotFoundError } from '../../../shared/errors/AppError';
+import { IProgressUpdateRepository } from '../../../domain/repositories/IProgressUpdateRepository';
+import { ICommentRepository } from '../../../domain/repositories/ICommentRepository';
 
 export class RoutineController {
   constructor(
@@ -22,7 +28,13 @@ export class RoutineController {
     private clientRepository: IClientRepository,
     private fileStorage: IFileStorage,
     private searchRoutinesUseCase: SearchRoutinesUseCase,
-    private deleteRoutineUseCase: DeleteRoutineUseCase
+    private editRoutineContentUseCase: EditRoutineContentUseCase,
+    private deleteRoutineUseCase: DeleteRoutineUseCase,
+    private submitProgressUseCase: SubmitRoutineProgressUpdateUseCase,
+    private addCommentUseCase: AddRoutineCommentUseCase,
+    private listProgressForTrainerUseCase: ListRoutineProgressForTrainerUseCase,
+    private progressRepo: IProgressUpdateRepository,
+    private commentRepo: ICommentRepository
   ) {}
 
   async list(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -206,6 +218,101 @@ export class RoutineController {
         message: 'Routine resent',
         data: result
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async editContent(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+      const result = await this.editRoutineContentUseCase.execute({
+        routineId: id,
+        gymId,
+        contenidoEditado: req.body.contenidoEditado,
+      });
+      res.json({ status: 'success', data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getProgressUpdates(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+      const updates = await this.progressRepo.findByRoutineId(id, gymId);
+      res.json({ status: 'success', data: updates });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async submitProgressUpdate(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+      const userId = (req as any).user?.id || '';
+      const result = await this.submitProgressUseCase.execute({
+        routineId: id,
+        gymId,
+        clientId: userId,
+        semana: req.body.semana ?? 1,
+        datos: req.body.datos ?? {},
+      });
+      res.json({ status: 'success', data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async addComment(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+      const userId = (req as any).user?.id || '';
+      const rol = (req as any).user?.role === 'cliente' ? 'cliente' : 'entrenador';
+      const result = await this.addCommentUseCase.execute({
+        routineId: id,
+        gymId,
+        autorUserId: userId,
+        autorRol: rol,
+        texto: req.body.texto ?? '',
+      });
+      res.json({ status: 'success', data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getComments(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const gymId = getTenantId(req);
+      const comments = await this.commentRepo.findByRoutineId(id, gymId);
+      res.json({ status: 'success', data: comments });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getMe(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const gymId = getTenantId(req);
+      const userId = (req as any).user?.id || '';
+      const routines = await this.routineRepository.findByClientId(userId, gymId);
+      res.json({ status: 'success', data: routines });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getTrainerDashboardSeguimiento(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const gymId = getTenantId(req);
+      const result = await this.listProgressForTrainerUseCase.execute(gymId);
+      res.json({ status: 'success', data: result });
     } catch (error) {
       next(error);
     }

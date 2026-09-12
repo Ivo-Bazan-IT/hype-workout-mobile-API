@@ -2,6 +2,18 @@ import { Types } from 'mongoose';
 
 export type UserRole = 'admin' | 'entrenador' | 'cliente';
 
+export interface PerfilEntrenador {
+  fotoUrl?: string;
+  bio?: string;
+  redesSociales?: {
+    instagram?: string;
+    tiktok?: string;
+    whatsapp?: string;
+    web?: string;
+  };
+  actualizacionesPorSemana: number;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -9,6 +21,7 @@ export interface User {
   role: UserRole;
   gymId?: string | null;
   entrenadorId?: string | null;
+  perfilPublico?: PerfilEntrenador;
   name: string;
   isActive: boolean;
   createdAt: Date;
@@ -25,6 +38,7 @@ export class UserEntity implements User {
     public isActive: boolean = true,
     public gymId: string | null = null,
     public entrenadorId: string | null = null,
+    public perfilPublico?: PerfilEntrenador,
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -41,6 +55,7 @@ export class UserMapper {
       doc.isActive,
       doc.gymId?.toString(),
       doc.entrenadorId?.toString() ?? null,
+      doc.perfilPublico,
       doc.createdAt,
       doc.updatedAt
     );
@@ -56,6 +71,7 @@ export class UserMapper {
       entrenadorId: entity.entrenadorId ? new Types.ObjectId(entity.entrenadorId) : undefined,
       name: entity.name,
       isActive: entity.isActive,
+      perfilPublico: entity.perfilPublico,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

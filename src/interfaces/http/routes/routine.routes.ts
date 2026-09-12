@@ -5,6 +5,12 @@ import { GenerateRoutineUseCase } from '../../../application/use-cases/routine/G
 import { ResendRoutineUseCase } from '../../../application/use-cases/routine/ResendRoutineUseCase';
 import { SearchRoutinesUseCase } from '../../../application/use-cases/routine/SearchRoutinesUseCase';
 import { DeleteRoutineUseCase } from '../../../application/use-cases/routine/DeleteRoutineUseCase';
+import { EditRoutineContentUseCase } from '../../../application/use-cases/routine/EditRoutineContentUseCase';
+import { MongoCommentRepository } from '../../../infrastructure/database/mongoose/repositories/MongoCommentRepository';
+import { MongoProgressUpdateRepository } from '../../../infrastructure/database/mongoose/repositories/MongoProgressUpdateRepository';
+import { SubmitRoutineProgressUpdateUseCase } from '../../../application/use-cases/routine/SubmitRoutineProgressUpdateUseCase';
+import { AddRoutineCommentUseCase } from '../../../application/use-cases/routine/AddRoutineCommentUseCase';
+import { ListRoutineProgressForTrainerUseCase } from '../../../application/use-cases/routine/ListRoutineProgressForTrainerUseCase';
 import { searchRoutinesSchema } from '../validators/routine.validator';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 import { MongoGymRepository } from '../../../infrastructure/database/mongoose/repositories/MongoGymRepository';
@@ -70,6 +76,12 @@ const createRoutineRouter = () => {
   );
 
   const searchRoutinesUseCase = new SearchRoutinesUseCase(routineRepository);
+  const editRoutineContentUseCase = new EditRoutineContentUseCase(routineRepository);
+  const progressRepo = new MongoProgressUpdateRepository();
+  const commentRepo = new MongoCommentRepository();
+  const submitProgressUseCase = new SubmitRoutineProgressUpdateUseCase(progressRepo, routineRepository);
+  const addCommentUseCase = new AddRoutineCommentUseCase(commentRepo);
+  const listProgressForTrainerUseCase = new ListRoutineProgressForTrainerUseCase(progressRepo);
   const deleteRoutineUseCase = new DeleteRoutineUseCase(routineRepository);
 
   const routineController = new RoutineController(
@@ -79,7 +91,13 @@ const createRoutineRouter = () => {
     clientRepository,
     fileStorage,
     searchRoutinesUseCase,
-    deleteRoutineUseCase
+    editRoutineContentUseCase,
+    deleteRoutineUseCase,
+    submitProgressUseCase,
+    addCommentUseCase,
+    listProgressForTrainerUseCase,
+    progressRepo,
+    commentRepo
   );
 
   router.post('/generate/:clientId', (req, res, next) =>
@@ -113,6 +131,34 @@ const createRoutineRouter = () => {
 
   router.post('/:id/resend', (req, res, next) =>
     routineController.resend(req, res, next)
+  );
+
+  router.put('/:id/contenido', (req, res, next) =>
+    routineController.editContent(req, res, next)
+  );
+
+  router.get('/:id/updates', (req, res, next) =>
+    routineController.getProgressUpdates(req, res, next)
+  );
+
+  router.post('/:id/updates', (req, res, next) =>
+    routineController.submitProgressUpdate(req, res, next)
+  );
+
+  router.get('/:id/comments', (req, res, next) =>
+    routineController.getComments(req, res, next)
+  );
+
+  router.post('/:id/comments', (req, res, next) =>
+    routineController.addComment(req, res, next)
+  );
+
+  router.get('/me', (req, res, next) =>
+    routineController.getMe(req as AuthenticatedRequest, res, next)
+  );
+
+  router.get('/seguimiento', (req, res, next) =>
+    routineController.getTrainerDashboardSeguimiento(req as AuthenticatedRequest, res, next)
   );
 
   router.delete('/:id', (req, res, next) =>

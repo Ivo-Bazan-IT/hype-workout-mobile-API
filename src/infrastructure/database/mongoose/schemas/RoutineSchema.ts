@@ -6,6 +6,8 @@ export interface RoutineDocument {
   clientId: Types.ObjectId;
   promptUsado?: string;
   contenidoGenerado?: Record<string, any>;
+  editadoManualmente?: boolean;
+  contenidoOriginalIA?: Record<string, any>;
   pdfUrl?: string;
   estadoGeneracion: 'pendiente' | 'generando' | 'generado' | 'error';
   estadoEnvio: 'pendiente' | 'enviando' | 'enviado' | 'error';
@@ -21,6 +23,8 @@ const routineSchema = new Schema<RoutineDocument>({
   clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
   promptUsado: { type: String },
   contenidoGenerado: { type: Schema.Types.Mixed },
+  editadoManualmente: { type: Boolean, default: false },
+  contenidoOriginalIA: { type: Schema.Types.Mixed },
   pdfUrl: { type: String },
   estadoGeneracion: {
     type: String,

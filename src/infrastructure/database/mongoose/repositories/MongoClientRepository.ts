@@ -118,6 +118,8 @@ export class MongoClientRepository implements IClientRepository {
       updateData.fechaFormularioEnviado = data.fechaFormularioEnviado;
     if (data.condicionFiscal !== undefined) updateData.condicionFiscal = data.condicionFiscal;
     if (data.cuit !== undefined) updateData.cuit = data.cuit;
+    if ((data as any).userId !== undefined) updateData.userId = (data as any).userId ? new (require('mongoose').Types.ObjectId)((data as any).userId) : undefined;
+    if ((data as any).origenAlta !== undefined) updateData.origenAlta = (data as any).origenAlta;
 
     const doc = await ClientModel.findOneAndUpdate(
       { _id: id, gymId },
@@ -134,6 +136,11 @@ export class MongoClientRepository implements IClientRepository {
       { estado: 'inactivo' }
     );
     return !!doc;
+  }
+
+  async findByUserId(userId: string, gymId: string): Promise<Client | null> {
+    const doc = await ClientModel.findOne({ userId: new (require('mongoose').Types.ObjectId)(userId), gymId });
+    return doc ? ClientMapper.toDomain(doc) : null;
   }
 
   async getExpiringSoon(gymId: string, days: number): Promise<Client[]> {

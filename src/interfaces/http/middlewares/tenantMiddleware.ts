@@ -11,7 +11,8 @@ import { ForbiddenError, ValidationError } from '../../../shared/errors/AppError
  * otras solo `user.gymId`, y RoutineController llegaba a consultar con gymId `''`.
  *
  * Reglas:
- *  - rol `gym`: siempre su propio gymId del JWT. No puede operar otro tenant.
+ *  - rol `entrenador`: siempre su propio gymId del JWT. No puede operar otro tenant.
+ *  - rol `cliente`: resuelve el tenant por `entrenadorId`.
  *  - rol `admin`: opera cualquier gym pasando `?gymId=`. Sin ese parámetro no hay
  *    tenant que resolver y se rechaza con 400: el super-admin no tiene gym propio,
  *    y adivinar uno sería peor que fallar.

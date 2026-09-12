@@ -7,6 +7,17 @@ export interface UserDocument {
   role: 'admin' | 'entrenador' | 'cliente';
   gymId?: Types.ObjectId;
   entrenadorId?: Types.ObjectId;
+  perfilPublico?: {
+    fotoUrl?: string;
+    bio?: string;
+    redesSociales?: {
+      instagram?: string;
+      tiktok?: string;
+      whatsapp?: string;
+      web?: string;
+    };
+    actualizacionesPorSemana: number;
+  };
   name: string;
   isActive: boolean;
   createdAt: Date;
@@ -26,6 +37,17 @@ const userSchema = new Schema<UserDocument>({
     type: Schema.Types.ObjectId,
     ref: 'User',
     required: false,
+  },
+  perfilPublico: {
+    fotoUrl: { type: String },
+    bio: { type: String },
+    redesSociales: {
+      instagram: { type: String },
+      tiktok: { type: String },
+      whatsapp: { type: String },
+      web: { type: String },
+    },
+    actualizacionesPorSemana: { type: Number, default: 1 },
   },
   name: { type: String, required: true },
   isActive: { type: Boolean, default: true },

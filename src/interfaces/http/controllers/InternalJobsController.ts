@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { EmitPendingInvoicesUseCase } from '../../../application/use-cases/invoice/EmitPendingInvoicesUseCase';
 import { env } from '../../../config/env';
+import { CheckWeeklyUpdatesUseCase } from '../../../application/use-cases/internal/CheckWeeklyUpdatesUseCase';
 
 /**
  * Disparadores de trabajo en segundo plano para un cron externo.
@@ -11,7 +12,22 @@ import { env } from '../../../config/env';
  * otro, según `INVOICE_WORKER_MODE`.
  */
 export class InternalJobsController {
-  constructor(private emitPendingInvoices: EmitPendingInvoicesUseCase) {}
+  constructor(
+    private emitPendingInvoices: EmitPendingInvoicesUseCase,
+    private checkWeeklyUpdatesUseCase: CheckWeeklyUpdatesUseCase
+  ) {}
+
+  async checkWeeklyUpdates(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const resumen = await this.checkWeeklyUpdatesUseCase.execute('');
+      res.json({
+        status: 'success',
+        data: resumen
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 
   async emitInvoices(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

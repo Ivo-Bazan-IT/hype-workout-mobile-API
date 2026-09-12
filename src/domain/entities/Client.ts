@@ -70,6 +70,8 @@ export interface Client {
   condicionFiscal?: ClientTaxCondition;
   /** CUIT del socio. Solo hace falta (y se exige) cuando es Responsable Inscripto. */
   cuit?: string;
+  userId?: string;
+  origenAlta?: 'entrenador' | 'autonomo';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -109,6 +111,8 @@ export class ClientEntity implements Client {
     public fechaFormularioEnviado?: Date,
     public condicionFiscal?: ClientTaxCondition,
     public cuit?: string,
+    public userId?: string,
+    public origenAlta?: 'entrenador' | 'autonomo',
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
   ) {}
@@ -134,6 +138,8 @@ export class ClientMapper {
       doc.fechaFormularioEnviado,
       doc.condicionFiscal,
       doc.cuit,
+      doc.userId?.toString(),
+      doc.origenAlta,
       doc.createdAt,
       doc.updatedAt
     );
@@ -158,6 +164,8 @@ export class ClientMapper {
       fechaFormularioEnviado: entity.fechaFormularioEnviado,
       condicionFiscal: entity.condicionFiscal,
       cuit: entity.cuit,
+      userId: entity.userId ? new Types.ObjectId(entity.userId) : undefined,
+      origenAlta: entity.origenAlta,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

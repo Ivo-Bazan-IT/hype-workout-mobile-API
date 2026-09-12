@@ -19,6 +19,8 @@ export interface ClientDocument {
   fechaFormularioEnviado?: Date;
   condicionFiscal?: ClientTaxCondition;
   cuit?: string;
+  userId?: Types.ObjectId;
+  origenAlta?: 'entrenador' | 'autonomo';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +56,8 @@ const clientSchema = new Schema<ClientDocument>({
   },
   // Solo se completa (y se exige en el use case) cuando condicionFiscal es RI.
   cuit: { type: String },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', index: { sparse: true, unique: true } },
+  origenAlta: { type: String, enum: ['entrenador', 'autonomo'], default: 'entrenador' },
 }, { timestamps: true });
 
 // Índices clave para el buscador (nombre + documento)

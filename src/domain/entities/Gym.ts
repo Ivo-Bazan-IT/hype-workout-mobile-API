@@ -5,6 +5,7 @@
  */
 import { FormFieldMapping } from '../forms/fieldMapping';
 import { GymTaxCondition } from '../billing/types';
+import { Types } from 'mongoose';
 
 export const AI_PROVIDERS = ['deepseek', 'openai', 'anthropic'] as const;
 
@@ -178,6 +179,16 @@ export interface AfipConfig {
   isActive: boolean;
 }
 
+export interface Servicio {
+  id: string;
+  nombre: string;
+  descripcion?: string;
+  precio: number;
+  tipoCobro: 'unico' | 'recurrente';
+  duracionDias?: number;
+  activo: boolean;
+}
+
 export interface Gym {
   id: string;
   name: string;
@@ -203,6 +214,9 @@ export interface Gym {
   timezone?: string;
   afipConfig?: AfipConfig;
   mercadoPagoConfig?: MercadoPagoConfig;
+  tipo?: 'gimnasio' | 'entrenador_independiente';
+  ownerUserId?: string;
+  servicios?: Servicio[];
   membershipPlans: MembershipPlan[];
   createdAt: Date;
   updatedAt: Date;
@@ -224,6 +238,9 @@ export class GymEntity implements Gym {
     public timezone?: string,
     public afipConfig?: AfipConfig,
     public mercadoPagoConfig?: MercadoPagoConfig,
+    public tipo: 'gimnasio' | 'entrenador_independiente' = 'gimnasio',
+    public ownerUserId?: string,
+    public servicios: Servicio[] = [],
     public membershipPlans: MembershipPlan[] = [],
     public createdAt: Date = new Date(),
     public updatedAt: Date = new Date()
@@ -247,6 +264,9 @@ export class GymMapper {
       doc.timezone,
       doc.afipConfig,
       doc.mercadoPagoConfig,
+      doc.tipo ?? 'gimnasio',
+      doc.ownerUserId?.toString(),
+      doc.servicios ?? [],
       doc.membershipPlans ?? [],
       doc.createdAt,
       doc.updatedAt
@@ -269,6 +289,9 @@ export class GymMapper {
       timezone: entity.timezone,
       afipConfig: entity.afipConfig,
       mercadoPagoConfig: entity.mercadoPagoConfig,
+      tipo: entity.tipo,
+      ownerUserId: entity.ownerUserId ? new Types.ObjectId(entity.ownerUserId) : undefined,
+      servicios: entity.servicios,
       membershipPlans: entity.membershipPlans,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
